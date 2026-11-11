@@ -27,7 +27,7 @@ O código herdado concentrava interface `SwiftUI`, estado global, chamadas a pro
    - `BrainPanel/Shared/Logging/StructuredLogger.swift` emite linhas JSON estruturadas com `refresh_id` e chaves permitidas por `LogFieldKey`, sanitizando valores livres em `LogSanitizer`. `BrainPanelTests/Unit/SecurityCanaryTests.swift` verifica com canários que entradas sensíveis não vazam em erros nem em logs.
 
 4. **Operação estritamente somente-leitura:**
-   - Os coletores de cota inspecionam apenas os comandos locais de status (`/usage` no `claude` e `/quota` no `agy`) em pseudo-terminal controlado (`BrainPanel/Shared/Terminal/PseudoTerminalSession.swift`, com escrita completa em loop tratando escrita parcial e `EINTR`), sem autenticar contas, sem enviar prompts a modelos e sem gastar tokens.
+   - Os coletores de cota inspecionam apenas os comandos locais de status (`/usage` no `claude` e `/quota` no `agy`) em pseudo-terminal controlado (`BrainPanel/Shared/Terminal/PseudoTerminalSession.swift`, com escrita completa em loop tratando escrita parcial/`EINTR` e encerramento garantido escalando `SIGTERM` para `SIGKILL`), sem autenticar contas, sem enviar prompts a modelos e sem gastar tokens.
    - O coletor de sessões verifica existência de processo (`kill(pid, 0)`) e lê no máximo o trecho final dos arquivos `.jsonl` configurados em modo somente-leitura.
 
 ## Consequências

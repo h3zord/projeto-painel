@@ -70,6 +70,90 @@ final class PseudoTerminalSessionIntegrationTests: XCTestCase {
     XCTAssertEqual(parsed.weeklyLimit?.usedPercentage, 20)
   }
 
+  func testTerminateEscalatesToSIGKILLWhenChildIgnoresSIGTERMAndSIGHUP() throws {
+    let tempRoot = try makeIsolatedTmpDirectory()
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let pidFileURL = tempRoot.appending(path: "child.pid")
+    let scriptURL = tempRoot.appending(path: "stubborn-cli.py")
+    let script = """
+      #!/usr/bin/env python3
+      import os, signal, sys, time
+
+      signal.signal(signal.SIGTERM, signal.SIG_IGN)
+      signal.signal(signal.SIGHUP, signal.SIG_IGN)
+      with open(sys.argv[1], "w", encoding="utf-8") as fh:
+          fh.write(str(os.getpid()))
+      os.write(1, b"STUBBORN_READY\\r\\n")
+      while True:
+          time.sleep(1)
+      """
+    try Data(script.utf8).write(to: scriptURL)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
+
+    let session = try PseudoTerminalSession(
+      executable: scriptURL,
+      arguments: [pidFileURL.path],
+      directory: tempRoot,
+      environment: [
+        "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
+        "LANG": "en_US.UTF-8",
+        "TERM": "xterm-256color",
+      ],
+      columns: 80,
+      rows: 24
+    )
+
+    let becameReady = session.read(timeout: 5.0) { $0.contains("STUBBORN_READY") }
+    XCTAssertTrue(becameReady)
+
+    let pidText = try String(contentsOf: pidFileURL, encoding: .utf8)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let childPID = try XCTUnwrap(Int32(pidText))
+    XCTAssertEqual(Darwin.kill(childPID, 0), 0, "Processo filho deveria estar vivo antes de terminate()")
+
+    session.terminate()
+
+    let stillAlive = Darwin.kill(childPID, 0) == 0
+    if stillAlive {
+      _ = Darwin.kill(childPID, SIGKILL)
+    }
+    XCTAssertFalse(
+      stillAlive,
+      "PseudoTerminalSession.terminate() deveria ter encerrado o processo mesmo ignorando SIGTERM/SIGHUP"
+    )
+
+    // Valida também o encerramento automático quando a sessão sai de escopo (deinit)
+    let deinitPIDFileURL = tempRoot.appending(path: "child-deinit.pid")
+    var scopedSession: PseudoTerminalSession? = try PseudoTerminalSession(
+      executable: scriptURL,
+      arguments: [deinitPIDFileURL.path],
+      directory: tempRoot,
+      environment: [
+        "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
+        "LANG": "en_US.UTF-8",
+        "TERM": "xterm-256color",
+      ],
+      columns: 80,
+      rows: 24
+    )
+    let deinitReady = scopedSession?.read(timeout: 5.0) { $0.contains("STUBBORN_READY") } ?? false
+    XCTAssertTrue(deinitReady)
+
+    let deinitPIDText = try String(contentsOf: deinitPIDFileURL, encoding: .utf8)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let deinitChildPID = try XCTUnwrap(Int32(deinitPIDText))
+    XCTAssertEqual(Darwin.kill(deinitChildPID, 0), 0)
+
+    scopedSession = nil
+
+    let deinitStillAlive = Darwin.kill(deinitChildPID, 0) == 0
+    if deinitStillAlive {
+      _ = Darwin.kill(deinitChildPID, SIGKILL)
+    }
+    XCTAssertFalse(deinitStillAlive, "deinit deveria encerrar o processo filho no PTY sem órfãos")
+  }
+
   private func makeIsolatedTmpDirectory() throws -> URL {
     let repoRoot = URL(filePath: #filePath)
       .deletingLastPathComponent()

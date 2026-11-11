@@ -38,21 +38,75 @@ final class GeminiQuotaParserTests: XCTestCase {
     XCTAssertEqual(
       usage.limits.map(\.id),
       [
-        "gemini-argon-weekly",
-        "gemini-flash-session",
-        "gemini-flash-weekly",
-        "gemini-claude-gpt-session",
-        "gemini-claude-gpt-weekly",
+        "gemini-claude-and-gpt-models-session",
+        "gemini-claude-and-gpt-models-weekly",
+        "gemini-4-argon-weekly",
+        "gemini-models-session",
+        "gemini-models-weekly",
       ]
     )
-    XCTAssertEqual(usage.weeklyLimit?.id, "gemini-argon-weekly")
+    XCTAssertEqual(usage.weeklyLimit?.id, "gemini-4-argon-weekly")
     XCTAssertEqual(usage.weeklyLimit?.usedPercentage, 84)
-    XCTAssertEqual(usage.sessionLimit?.id, "gemini-claude-gpt-session")
+    XCTAssertEqual(usage.sessionLimit?.id, "gemini-claude-and-gpt-models-session")
     XCTAssertEqual(usage.sessionLimit?.usedPercentage, 80)
     XCTAssertEqual(
       usage.sessionLimit?.resetsAt,
       fixedNow.addingTimeInterval(2 * 3_600 + 15 * 60)
     )
+  }
+
+  func testExtractsDynamicGroupsWithPunctuationWithoutDroppingUnknownModels() throws {
+    let screen = """
+      Google AI Ultra
+      Models & Quota
+
+      GEMINI 4 CARBON
+      Weekly Limit
+      12% Refreshes in 2d 5h
+      5-Hour Limit
+      65% Refreshes in 3h 10m
+
+      GEMINI 2.5 PRO
+      Five Hour Limit
+      90% Refreshes in 4h
+      Weekly Limit
+      40% Refreshes in 6d
+
+      CLAUDE & GPT-4.5 / SONNET
+      Weekly Limit
+      5% Refreshes in 1d 2h
+
+      Within each group models share quota.
+      Press Esc to return.
+      """
+
+    let usage = try GeminiQuotaParser.makeUsage(from: screen, now: fixedNow)
+    XCTAssertEqual(usage.plan, "Google AI Ultra")
+    XCTAssertEqual(
+      usage.limits.map(\.id),
+      [
+        "gemini-4-carbon-session",
+        "gemini-4-carbon-weekly",
+        "gemini-2-5-pro-session",
+        "gemini-2-5-pro-weekly",
+        "gemini-claude-gpt-4-5-sonnet-weekly",
+      ]
+    )
+    XCTAssertEqual(
+      usage.limits.map(\.name),
+      [
+        "Gemini 4 Carbon",
+        "Gemini 4 Carbon",
+        "Gemini 2.5 Pro",
+        "Gemini 2.5 Pro",
+        "Claude & GPT-4.5 / Sonnet",
+      ]
+    )
+    // A janela semanal mais consumida é Claude & GPT-4.5 / Sonnet (95% usado, 5% restante)
+    XCTAssertEqual(usage.weeklyLimit?.id, "gemini-claude-gpt-4-5-sonnet-weekly")
+    XCTAssertEqual(usage.weeklyLimit?.usedPercentage, 95)
+    XCTAssertEqual(usage.sessionLimit?.id, "gemini-4-carbon-session")
+    XCTAssertEqual(usage.sessionLimit?.usedPercentage, 35)
   }
 
   func testThrowsUnexpectedOutputWhenNoGroupsExist() {

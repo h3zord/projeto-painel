@@ -35,21 +35,37 @@ struct ProviderDetailsView: View {
 
         Spacer()
 
-        Label(provider.sessionState.label, systemImage: "circle.fill")
-          .font(.caption2)
-          .foregroundStyle(.secondary)
-          .symbolRenderingMode(.monochrome)
+        if provider.sessionState.isStale {
+          Label(provider.sessionState.label, systemImage: "exclamationmark.triangle.fill")
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(.orange)
+        } else {
+          Label(provider.sessionState.label, systemImage: "circle.fill")
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .symbolRenderingMode(.monochrome)
+        }
       }
 
       if let reason = provider.unavailableReason {
         UnavailableProviderMessage(reason: reason, color: color)
-      } else if provider.id == KnownProviderID.gemini.rawValue {
-        ForEach(geminiGroups) { group in
-          GeminiModelGroupView(group: group, color: color, referenceDate: referenceDate)
-        }
       } else {
-        ForEach(provider.limits) { limit in
-          DetailedLimitRow(limit: limit, color: color, referenceDate: referenceDate)
+        if case .stale(let reason, let lastUpdatedAt) = provider.sessionState {
+          StaleProviderMessage(
+            reason: reason,
+            lastUpdatedAt: lastUpdatedAt,
+            referenceDate: referenceDate
+          )
+        }
+
+        if provider.id == KnownProviderID.gemini.rawValue {
+          ForEach(geminiGroups) { group in
+            GeminiModelGroupView(group: group, color: color, referenceDate: referenceDate)
+          }
+        } else {
+          ForEach(provider.limits) { limit in
+            DetailedLimitRow(limit: limit, color: color, referenceDate: referenceDate)
+          }
         }
       }
     }
@@ -57,7 +73,10 @@ struct ProviderDetailsView: View {
     .background(.background.opacity(0.62), in: RoundedRectangle(cornerRadius: 10))
     .overlay {
       RoundedRectangle(cornerRadius: 10)
-        .stroke(color.opacity(0.2), lineWidth: 0.5)
+        .stroke(
+          provider.sessionState.isStale ? Color.orange.opacity(0.32) : color.opacity(0.2),
+          lineWidth: 0.5
+        )
     }
   }
 }
@@ -146,6 +165,41 @@ private struct ModelSubLimitRow: View {
       .orange
     default:
       color
+    }
+  }
+}
+
+private struct StaleProviderMessage: View {
+  let reason: String
+  let lastUpdatedAt: Date
+  let referenceDate: Date
+
+  var body: some View {
+    TimelineView(.periodic(from: referenceDate, by: 60)) { context in
+      HStack(alignment: .top, spacing: 6) {
+        Image(systemName: "exclamationmark.triangle.fill")
+          .font(.caption2)
+          .foregroundStyle(.orange)
+          .padding(.top, 1)
+
+        VStack(alignment: .leading, spacing: 2) {
+          Text(reason)
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(.primary)
+            .fixedSize(horizontal: false, vertical: true)
+
+          Text(ProviderUsage.staleAgeSummary(since: lastUpdatedAt, now: context.date))
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(8)
+      .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 7))
+      .overlay {
+        RoundedRectangle(cornerRadius: 7)
+          .stroke(Color.orange.opacity(0.24), lineWidth: 0.5)
+      }
     }
   }
 }

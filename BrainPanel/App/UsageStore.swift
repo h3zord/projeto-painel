@@ -95,7 +95,7 @@ final class UsageStore {
   var menuBarLabel: String {
     let lowestRemaining =
       providers
-      .filter { $0.sessionState == .active }
+      .filter { $0.sessionState.hasUsableQuota }
       .flatMap(\.limits)
       .map(\.remainingPercentage)
       .min()
@@ -207,6 +207,7 @@ final class UsageStore {
         let outcome = QuotaStateReducer.apply(
           result: result,
           for: providerID,
+          now: clock.now(),
           into: &providers
         )
         switch outcome {
@@ -221,14 +222,14 @@ final class UsageStore {
               .limitsCount: "\(usage.limits.count)",
             ]
           )
-        case .preservedActive(let appError):
+        case .markedStale(_, let appError):
           logger.warn(
             event: "collector_failed_preserved_cache",
             refreshID: correlationID,
             errorCode: appError.code,
             fields: [
               .provider: providerID,
-              .status: "preserved",
+              .status: "stale",
             ]
           )
         case .markedUnavailable(_, let appError):

@@ -157,11 +157,12 @@ final class UsageStoreTests: XCTestCase {
     XCTAssertEqual(store.activeConversations.count, 2)
   }
 
-  func testPreservesLastValidReadingWhenSubsequentRefreshFails() async {
+  func testPreservesLastValidReadingAsStaleAndRecoversOnSubsequentSuccess() async {
     let clock = TestClock()
     let logSink = InMemoryLogSink()
     let logger = StructuredLogger(clock: clock, sink: logSink)
 
+    let initialTimestamp = clock.now()
     let validClaude = ProviderUsage(
       id: "claude",
       name: "Claude",
@@ -175,12 +176,27 @@ final class UsageStoreTests: XCTestCase {
           resetsAt: nil)
       ]
     )
+    let recoveredClaude = ProviderUsage(
+      id: "claude",
+      name: "Claude",
+      plan: "Max",
+      icon: .asset("ClaudeIcon"),
+      tint: .orange,
+      sessionState: .active,
+      limits: [
+        UsageLimit(
+          id: "claude-session", name: "Sessão", detail: nil, window: .session, usedPercentage: 40,
+          resetsAt: nil)
+      ]
+    )
 
     let claudeCollector = StubUsageCollector(
       providerID: "claude",
       results: [
         .success(validClaude),
         .failure(AppError.collectorTimedOut(provider: .claude)),
+        .failure(AppError.executableNotFound(.claude)),
+        .success(recoveredClaude),
       ]
     )
     let geminiCollector = StubUsageCollector(
@@ -198,15 +214,48 @@ final class UsageStoreTests: XCTestCase {
 
     await store.refresh()
     XCTAssertEqual(store.providers[0].sessionState, .active)
+    XCTAssertEqual(store.providers[0].lastUpdatedAt, initialTimestamp)
+    XCTAssertEqual(store.menuBarLabel, "75%")
     XCTAssertEqual(
       store.providers[1].unavailableReason,
       AppError.executableNotFound(.agy).userMessage
     )
 
+    clock.advance(by: 300)
+    await store.refresh()
+    XCTAssertEqual(
+      store.providers[0].sessionState,
+      .stale(
+        reason: AppError.collectorTimedOut(provider: .claude).userMessage,
+        lastUpdatedAt: initialTimestamp
+      )
+    )
+    XCTAssertEqual(store.providers[0].sessionState.label, "Leitura defasada")
+    XCTAssertEqual(store.providers[0].sessionLimit?.remainingPercentage, 75)
+    XCTAssertEqual(store.menuBarLabel, "75%")
+    XCTAssertTrue(logSink.lines.contains { $0.contains("collector_failed_preserved_cache") })
+
+    // Segunda falha consecutiva preserva o carimbo original da última leitura válida e atualiza o motivo
+    clock.advance(by: 300)
+    await store.refresh()
+    XCTAssertEqual(
+      store.providers[0].sessionState,
+      .stale(
+        reason: AppError.executableNotFound(.claude).userMessage,
+        lastUpdatedAt: initialTimestamp
+      )
+    )
+    XCTAssertEqual(store.menuBarLabel, "75%")
+
+    // Coleta futura bem-sucedida restaura .active com os novos limites e novo carimbo
+    clock.advance(by: 300)
+    let recoveryTimestamp = clock.now()
     await store.refresh()
     XCTAssertEqual(store.providers[0].sessionState, .active)
-    XCTAssertEqual(store.providers[0].sessionLimit?.remainingPercentage, 75)
-    XCTAssertTrue(logSink.lines.contains { $0.contains("collector_failed_preserved_cache") })
+    XCTAssertNil(store.providers[0].staleReason)
+    XCTAssertEqual(store.providers[0].lastUpdatedAt, recoveryTimestamp)
+    XCTAssertEqual(store.providers[0].sessionLimit?.remainingPercentage, 60)
+    XCTAssertEqual(store.menuBarLabel, "60%")
   }
 
   func testDeallocationCancelsPeriodicRefreshTask() async {

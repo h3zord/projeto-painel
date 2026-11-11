@@ -6,12 +6,16 @@ import Foundation
 nonisolated final class PseudoTerminalSession {
   typealias ByteWriter = (UnsafeRawPointer, Int) -> (written: Int, errorNumber: Int32)
 
+  private static let defaultGracePeriodSeconds: TimeInterval = 0.2
+  private static let pollStepMicroseconds: useconds_t = 5_000
+
   private let process = Process()
   private let master: Int32
   private let columns: Int
   private let rows: Int
   private let clock: any Clock
   private var buffer = Data()
+  private var isMasterClosed = false
 
   init(
     executable: URL,
@@ -57,7 +61,11 @@ nonisolated final class PseudoTerminalSession {
 
   deinit {
     terminate()
-    Darwin.close(master)
+    closeMasterDescriptor()
+  }
+
+  var processIdentifier: Int32 {
+    process.processIdentifier
   }
 
   /// Texto sequencial completo impresso pelo processo com códigos de controle removidos.
@@ -143,10 +151,37 @@ nonisolated final class PseudoTerminalSession {
     }
   }
 
-  func terminate() {
+  /// Envia `SIGTERM`, aguarda o encerramento dentro de uma janela curta e escala para `SIGKILL`
+  /// caso o processo filho continue vivo, colhendo o status de saída para não deixar órfãos nem zombies.
+  func terminate(gracePeriod: TimeInterval = PseudoTerminalSession.defaultGracePeriodSeconds) {
+    let pid = process.processIdentifier
+    guard pid > 0 else { return }
+
     if process.isRunning {
       process.terminate()
+
+      let stepSeconds = Double(Self.pollStepMicroseconds) / 1_000_000
+      let maxSteps = max(Int((max(gracePeriod, 0) / stepSeconds).rounded(.up)), 1)
+
+      for _ in 0..<maxSteps {
+        if !process.isRunning {
+          break
+        }
+        usleep(Self.pollStepMicroseconds)
+      }
+
+      if process.isRunning {
+        _ = Darwin.kill(pid, SIGKILL)
+      }
     }
+
+    process.waitUntilExit()
+  }
+
+  private func closeMasterDescriptor() {
+    guard !isMasterClosed else { return }
+    isMasterClosed = true
+    Darwin.close(master)
   }
 
   private func readAvailable(waitingMilliseconds: Int32) -> Bool {

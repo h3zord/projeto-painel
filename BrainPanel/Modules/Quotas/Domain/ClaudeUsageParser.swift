@@ -29,7 +29,8 @@ nonisolated enum ClaudeUsageParser {
       icon: .asset("ClaudeIcon"),
       tint: .orange,
       sessionState: .active,
-      limits: parsedLimits
+      limits: parsedLimits,
+      lastUpdatedAt: now
     )
   }
 
