@@ -50,8 +50,8 @@ struct BrainScheduledJobsCardView: View {
       badgeText: badgeInfo.text,
       badgeTone: badgeInfo.tone,
       cardTone: cardTone,
-      headerAccessory: {
-        BrainInlineLinkButton(
+      headerLinks: [
+        BrainHeaderLinkSpec(
           title: "Agenda",
           destinationURL: BrainPagesNavigator.resolveSection(
             .scheduledJobs,
@@ -61,7 +61,7 @@ struct BrainScheduledJobsCardView: View {
           accessibilityLabel: "Abrir seção de jobs agendados no brain-pages",
           action: openURLAction
         )
-      }
+      ]
     ) {
       switch state {
       case .failed(let appError):

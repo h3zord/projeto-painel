@@ -61,27 +61,25 @@ struct BrainHealthCardView: View {
       badgeText: badgeInfo.text,
       badgeTone: badgeInfo.tone,
       cardTone: cardTone,
-      headerAccessory: {
-        HStack(spacing: 4) {
-          BrainInlineLinkButton(
-            title: "Saúde",
-            destinationURL: BrainPagesNavigator.resolveSection(.health, baseURL: brainPagesURL),
-            isEnabled: canOpenPages,
-            accessibilityLabel: "Abrir seção de saúde no brain-pages",
-            action: openURLAction
-          )
-          BrainInlineLinkButton(
-            title: "Backup",
-            destinationURL: BrainPagesNavigator.resolveSection(
-              .backupDrive,
-              baseURL: brainPagesURL
-            ),
-            isEnabled: canOpenPages,
-            accessibilityLabel: "Abrir página de backup no brain-pages",
-            action: openURLAction
-          )
-        }
-      }
+      headerLinks: [
+        BrainHeaderLinkSpec(
+          title: "Saúde",
+          destinationURL: BrainPagesNavigator.resolveSection(.health, baseURL: brainPagesURL),
+          isEnabled: canOpenPages,
+          accessibilityLabel: "Abrir seção de saúde no brain-pages",
+          action: openURLAction
+        ),
+        BrainHeaderLinkSpec(
+          title: "Backup",
+          destinationURL: BrainPagesNavigator.resolveSection(
+            .backupDrive,
+            baseURL: brainPagesURL
+          ),
+          isEnabled: canOpenPages,
+          accessibilityLabel: "Abrir página de backup no brain-pages",
+          action: openURLAction
+        ),
+      ]
     ) {
       switch state {
       case .failed(let appError):

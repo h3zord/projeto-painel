@@ -118,26 +118,31 @@ struct BrainSectionBadge: View {
   }
 }
 
-struct BrainInlineLinkButton: View {
+struct BrainHeaderLinkSpec: Identifiable {
+  var id: String { title }
   let title: String
   let destinationURL: URL?
   let isEnabled: Bool
   let accessibilityLabel: String
   let action: (URL) -> Void
+}
+
+struct BrainInlineLinkButton: View {
+  let spec: BrainHeaderLinkSpec
 
   private var effectiveDestination: URL? {
-    guard isEnabled, let destinationURL else { return nil }
+    guard spec.isEnabled, let destinationURL = spec.destinationURL else { return nil }
     return destinationURL
   }
 
   var body: some View {
     Button {
       if let effectiveDestination {
-        action(effectiveDestination)
+        spec.action(effectiveDestination)
       }
     } label: {
       HStack(spacing: 2.5) {
-        Text(title)
+        Text(spec.title)
           .font(.system(size: 9.5, weight: .semibold))
         Image(systemName: "arrow.up.right")
           .font(.system(size: 7.5, weight: .bold))
@@ -160,42 +165,22 @@ struct BrainInlineLinkButton: View {
     .buttonStyle(.plain)
     .disabled(effectiveDestination == nil)
     .help(effectiveDestination?.absoluteString ?? "URL loopback indisponível")
-    .accessibilityLabel(accessibilityLabel)
+    .accessibilityLabel(spec.accessibilityLabel)
     .accessibilityHint(
       effectiveDestination.map { "Abre \($0.absoluteString) no navegador" } ?? ""
     )
   }
 }
 
-struct BrainSectionCard<Accessory: View, Content: View>: View {
+struct BrainSectionCard<Content: View>: View {
   let title: String
   let iconName: String
   let iconTone: BrainCardTone
   let badgeText: String
   let badgeTone: BrainCardTone
   let cardTone: BrainCardTone
-  @ViewBuilder let headerAccessory: () -> Accessory
+  var headerLinks: [BrainHeaderLinkSpec] = []
   @ViewBuilder let content: () -> Content
-
-  init(
-    title: String,
-    iconName: String,
-    iconTone: BrainCardTone,
-    badgeText: String,
-    badgeTone: BrainCardTone,
-    cardTone: BrainCardTone,
-    @ViewBuilder headerAccessory: @escaping () -> Accessory,
-    @ViewBuilder content: @escaping () -> Content
-  ) {
-    self.title = title
-    self.iconName = iconName
-    self.iconTone = iconTone
-    self.badgeText = badgeText
-    self.badgeTone = badgeTone
-    self.cardTone = cardTone
-    self.headerAccessory = headerAccessory
-    self.content = content
-  }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
@@ -220,7 +205,13 @@ struct BrainSectionCard<Accessory: View, Content: View>: View {
         }
         .accessibilityElement(children: .combine)
 
-        headerAccessory()
+        if !headerLinks.isEmpty {
+          HStack(spacing: 4) {
+            ForEach(headerLinks) { linkSpec in
+              BrainInlineLinkButton(spec: linkSpec)
+            }
+          }
+        }
       }
 
       content()
@@ -232,29 +223,6 @@ struct BrainSectionCard<Accessory: View, Content: View>: View {
       RoundedRectangle(cornerRadius: 10)
         .stroke(cardTone.borderColor, lineWidth: 0.6)
     }
-  }
-}
-
-extension BrainSectionCard where Accessory == EmptyView {
-  init(
-    title: String,
-    iconName: String,
-    iconTone: BrainCardTone,
-    badgeText: String,
-    badgeTone: BrainCardTone,
-    cardTone: BrainCardTone,
-    @ViewBuilder content: @escaping () -> Content
-  ) {
-    self.init(
-      title: title,
-      iconName: iconName,
-      iconTone: iconTone,
-      badgeText: badgeText,
-      badgeTone: badgeTone,
-      cardTone: cardTone,
-      headerAccessory: { EmptyView() },
-      content: content
-    )
   }
 }
 

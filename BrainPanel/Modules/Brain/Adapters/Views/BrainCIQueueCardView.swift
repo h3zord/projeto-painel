@@ -60,15 +60,15 @@ struct BrainCIQueueCardView: View {
       badgeText: badgeInfo.text,
       badgeTone: badgeInfo.tone,
       cardTone: cardTone,
-      headerAccessory: {
-        BrainInlineLinkButton(
+      headerLinks: [
+        BrainHeaderLinkSpec(
           title: "Fila",
           destinationURL: BrainPagesNavigator.resolveSection(.ciQueue, baseURL: brainPagesURL),
           isEnabled: canOpenPages,
           accessibilityLabel: "Abrir página da fila brain-ci no brain-pages",
           action: openURLAction
         )
-      }
+      ]
     ) {
       switch state {
       case .failed(let appError):
