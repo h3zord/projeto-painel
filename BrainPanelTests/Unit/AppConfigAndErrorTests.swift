@@ -45,6 +45,7 @@ final class AppConfigAndErrorTests: XCTestCase {
       "/Users/teste/Brain/local/pages/backup-drive.json"
     )
     XCTAssertEqual(config.brainPagesURL.absoluteString, "http://127.0.0.1:4780/")
+    XCTAssertTrue(config.notificationsEnabled)
     XCTAssertEqual(config.childCLIEnvironment["LANG"], "en_US.UTF-8")
     XCTAssertEqual(config.childCLIEnvironment["TERM"], "xterm-256color")
   }
@@ -59,6 +60,7 @@ final class AppConfigAndErrorTests: XCTestCase {
     )
 
     XCTAssertEqual(config.mode, .testing)
+    XCTAssertFalse(config.notificationsEnabled)
     XCTAssertFalse(config.claudeSessionsDirectory.path.contains("/Users/teste/.claude"))
     XCTAssertFalse(config.claudeProjectsDirectory.path.contains("/Users/teste/.claude"))
     XCTAssertFalse(config.claudeContextCacheDirectory.path.contains("/Users/teste/.cache"))
@@ -183,6 +185,62 @@ final class AppConfigAndErrorTests: XCTestCase {
       environment: ["BRAIN_PANEL_BRAIN_PAGES_URL": ""],
       expectedSetting: "BRAIN_PANEL_BRAIN_PAGES_URL"
     )
+    for badFlag in ["", "1", "0", "TRUE", "False", "yes", " true "] {
+      assertConfigFails(
+        environment: ["BRAIN_PANEL_NOTIFICATIONS_ENABLED": badFlag],
+        expectedSetting: "BRAIN_PANEL_NOTIFICATIONS_ENABLED"
+      )
+    }
+  }
+
+  func testNotificationsEnabledParsesStrictBooleansAndDefaultsByMode() throws {
+    let liveExplicitFalse = try AppConfig.parse(
+      environment: [
+        "BRAIN_PANEL_MODE": "live",
+        "BRAIN_PANEL_NOTIFICATIONS_ENABLED": "false",
+      ],
+      defaultHomeDirectory: homeURL,
+      defaultAppSupportRoot: appSupportURL,
+      defaultTemporaryRoot: tempURL,
+      bundleIdentifier: "com.h3zord.BrainPanel"
+    )
+    XCTAssertEqual(liveExplicitFalse.mode, .live)
+    XCTAssertFalse(liveExplicitFalse.notificationsEnabled)
+
+    let liveExplicitTrue = try AppConfig.parse(
+      environment: [
+        "BRAIN_PANEL_MODE": "live",
+        "BRAIN_PANEL_NOTIFICATIONS_ENABLED": "true",
+      ],
+      defaultHomeDirectory: homeURL,
+      defaultAppSupportRoot: appSupportURL,
+      defaultTemporaryRoot: tempURL,
+      bundleIdentifier: "com.h3zord.BrainPanel"
+    )
+    XCTAssertTrue(liveExplicitTrue.notificationsEnabled)
+
+    for nonLiveMode in ["isolated", "self_check", "testing"] {
+      let defaultNonLive = try AppConfig.parse(
+        environment: ["BRAIN_PANEL_MODE": nonLiveMode],
+        defaultHomeDirectory: homeURL,
+        defaultAppSupportRoot: appSupportURL,
+        defaultTemporaryRoot: tempURL,
+        bundleIdentifier: "com.h3zord.BrainPanel"
+      )
+      XCTAssertFalse(defaultNonLive.notificationsEnabled)
+
+      let explicitTrueNonLive = try AppConfig.parse(
+        environment: [
+          "BRAIN_PANEL_MODE": nonLiveMode,
+          "BRAIN_PANEL_NOTIFICATIONS_ENABLED": "true",
+        ],
+        defaultHomeDirectory: homeURL,
+        defaultAppSupportRoot: appSupportURL,
+        defaultTemporaryRoot: tempURL,
+        bundleIdentifier: "com.h3zord.BrainPanel"
+      )
+      XCTAssertTrue(explicitTrueNonLive.notificationsEnabled)
+    }
   }
 
   func testAcceptsLoopbackBrainPagesURLVariants() throws {

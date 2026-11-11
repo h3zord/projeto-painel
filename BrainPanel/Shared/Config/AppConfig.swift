@@ -30,6 +30,7 @@ nonisolated struct AppConfig: Equatable, Sendable {
     "BRAIN_PANEL_LAUNCH_AGENTS_DIR",
     "BRAIN_PANEL_BACKUP_PROGRESS_FILE",
     "BRAIN_PANEL_BRAIN_PAGES_URL",
+    "BRAIN_PANEL_NOTIFICATIONS_ENABLED",
     "BRAIN_PANEL_APP_SUPPORT_DIR",
     "BRAIN_PANEL_CLI_SEARCH_PATHS",
   ]
@@ -59,6 +60,7 @@ nonisolated struct AppConfig: Equatable, Sendable {
   let launchAgentsDirectory: URL
   let backupProgressFileURL: URL
   let brainPagesURL: URL
+  let notificationsEnabled: Bool
   let appSupportDirectory: URL
   let cliSearchPaths: [String]
   let childCLIEnvironment: [String: String]
@@ -276,6 +278,7 @@ nonisolated struct AppConfig: Equatable, Sendable {
       defaultURL: defaultBackupProgressFile
     )
     let brainPagesURL = try parseBrainPagesURL(in: environment)
+    let notificationsEnabled = try parseNotificationsEnabled(in: environment, mode: mode)
     let appSupportDirectory = try parseOptionalDirectory(
       key: "BRAIN_PANEL_APP_SUPPORT_DIR",
       in: environment,
@@ -311,6 +314,7 @@ nonisolated struct AppConfig: Equatable, Sendable {
       launchAgentsDirectory: launchAgentsDirectory,
       backupProgressFileURL: backupProgressFileURL,
       brainPagesURL: brainPagesURL,
+      notificationsEnabled: notificationsEnabled,
       appSupportDirectory: appSupportDirectory,
       cliSearchPaths: cliSearchPaths,
       childCLIEnvironment: childEnv
@@ -377,6 +381,23 @@ nonisolated struct AppConfig: Equatable, Sendable {
       return defaultBrainPagesURL
     }
     return try validateLoopbackHTTPURL(raw, setting: "BRAIN_PANEL_BRAIN_PAGES_URL")
+  }
+
+  private static func parseNotificationsEnabled(
+    in environment: [String: String],
+    mode: RuntimeMode
+  ) throws(AppError) -> Bool {
+    guard let raw = environment["BRAIN_PANEL_NOTIFICATIONS_ENABLED"] else {
+      return mode == .live
+    }
+    switch raw {
+    case "true":
+      return true
+    case "false":
+      return false
+    default:
+      throw AppError.invalidConfiguration(setting: "BRAIN_PANEL_NOTIFICATIONS_ENABLED")
+    }
   }
 
   static func isSafeLoopbackPagesURL(_ url: URL) -> Bool {

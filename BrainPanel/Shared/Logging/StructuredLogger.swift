@@ -17,6 +17,7 @@ nonisolated enum LogFieldKey: String, Equatable, Hashable, Sendable {
   case conversationsCount = "conversations_count"
   case waitingCount = "waiting_count"
   case degradedSectionsCount = "degraded_sections_count"
+  case notificationsCount = "notifications_count"
   case section = "section"
   case durationMs = "duration_ms"
   case mode = "mode"
