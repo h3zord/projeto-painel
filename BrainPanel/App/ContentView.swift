@@ -32,10 +32,16 @@ struct ContentView: View {
             referenceDate: store.currentDate,
             selectedProviderID: $selectedProviderID
           )
-          ActiveConversationsSection(conversations: store.activeConversations)
+          ActiveConversationsSection(
+            conversations: store.activeConversations,
+            referenceDate: store.currentDate
+          )
         }
       case .sessions:
-        SessionsTabView(conversations: store.activeConversations)
+        SessionsTabView(
+          conversations: store.activeConversations,
+          referenceDate: store.currentDate
+        )
       }
 
       Divider()

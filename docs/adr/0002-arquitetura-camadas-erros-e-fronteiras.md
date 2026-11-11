@@ -11,7 +11,7 @@ O código herdado concentrava interface `SwiftUI`, estado global, chamadas a pro
 
 1. **Organização por funcionalidade e camadas (`Domain` -> `Application` -> `Adapters`):**
    - `BrainPanel/Modules/Quotas/` e `BrainPanel/Modules/Sessions/` separam:
-     - `Domain/`: entidades, cálculos de janela/contexto e parsers puros (`ProviderUsage.swift`, `ClaudeUsageParser.swift`, `GeminiQuotaParser.swift`, `ActiveConversation.swift`), importando apenas `Foundation` e módulos puros de `BrainPanel/Shared/` (`Clock`, `Errors`, `TerminalText`, `TerminalScreen`), sem `SwiftUI`, `AppKit`, `Darwin` ou `Observation`.
+     - `Domain/`: entidades, cálculos de janela/contexto e parsers puros (`ProviderUsage.swift`, `ClaudeUsageParser.swift`, `GeminiQuotaParser.swift`, `ActiveConversation.swift`, `SessionTranscriptParsers.swift`), importando apenas `Foundation` e módulos puros de `BrainPanel/Shared/` (`Clock`, `Errors`, `TerminalText`, `TerminalScreen`), sem `SwiftUI`, `AppKit`, `Darwin`, `OSLog`, `Observation` ou `SQLite3`.
      - `Application/`: portas e redutores de caso de uso (`UsageCollector.swift`, `ConversationCollecting.swift`), desacoplados de UI e de syscalls.
      - `Adapters/`: coletores concretos de processo/sistema de arquivos (`ClaudeCollector.swift`, `GeminiCollector.swift`, `ActiveConversationCollector.swift`) e componentes `SwiftUI` pequenos em `Adapters/Views/`.
    - `BrainPanel/App/` faz exclusivamente a composição raiz (`BrainPanelApp.swift`, `UsageStore.swift`, `MenuTabBar.swift`, `ContentView.swift`), cancelando a tarefa periódica de atualização quando `UsageStore` é desalocado.
@@ -28,7 +28,7 @@ O código herdado concentrava interface `SwiftUI`, estado global, chamadas a pro
 
 4. **Operação estritamente somente-leitura:**
    - Os coletores de cota inspecionam apenas os comandos locais de status (`/usage` no `claude` e `/quota` no `agy`) em pseudo-terminal controlado (`BrainPanel/Shared/Terminal/PseudoTerminalSession.swift`, com escrita completa em loop tratando escrita parcial/`EINTR` e encerramento garantido escalando `SIGTERM` para `SIGKILL`), sem autenticar contas, sem enviar prompts a modelos e sem gastar tokens.
-   - O coletor de sessões verifica existência de processo (`kill(pid, 0)`) e lê no máximo o trecho final dos arquivos `.jsonl` configurados em modo somente-leitura.
+   - O coletor de sessões verifica existência de processo (`kill(pid, 0)`) para o Claude Code, filtra transcripts recentes do Antigravity pelo `Clock` injetado, lê no máximo os últimos 4 MB de cada `.jsonl` configurado e consulta `conversation_summaries.db` exclusivamente com `SQLITE_OPEN_READONLY` e `immutable=1` (sem criar arquivos `-wal` ou `-shm`).
 
 ## Consequências
 

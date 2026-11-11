@@ -22,6 +22,9 @@ nonisolated struct AppConfig: Equatable, Sendable {
     "BRAIN_PANEL_CACHE_TTL_SECONDS",
     "BRAIN_PANEL_CLAUDE_SESSIONS_DIR",
     "BRAIN_PANEL_CLAUDE_PROJECTS_DIR",
+    "BRAIN_PANEL_CLAUDE_CONTEXT_CACHE_DIR",
+    "BRAIN_PANEL_ANTIGRAVITY_DIR",
+    "BRAIN_PANEL_BRAIN_SESSIONS_STATE_DIR",
     "BRAIN_PANEL_APP_SUPPORT_DIR",
     "BRAIN_PANEL_CLI_SEARCH_PATHS",
   ]
@@ -34,6 +37,9 @@ nonisolated struct AppConfig: Equatable, Sendable {
   let cacheTTLSeconds: Int
   let claudeSessionsDirectory: URL
   let claudeProjectsDirectory: URL
+  let claudeContextCacheDirectory: URL
+  let antigravityDirectory: URL
+  let brainSessionsStateDirectory: URL
   let appSupportDirectory: URL
   let cliSearchPaths: [String]
   let childCLIEnvironment: [String: String]
@@ -93,6 +99,9 @@ nonisolated struct AppConfig: Equatable, Sendable {
 
     let defaultSessionsDir: URL
     let defaultProjectsDir: URL
+    let defaultContextCacheDir: URL
+    let defaultAntigravityDir: URL
+    let defaultBrainSessionsStateDir: URL
     let defaultSupportDir: URL
     let defaultSearchPaths: [String]
 
@@ -105,6 +114,18 @@ nonisolated struct AppConfig: Equatable, Sendable {
       let homeURL = URL(filePath: homePath, directoryHint: .isDirectory)
       defaultSessionsDir = homeURL.appending(path: ".claude/sessions", directoryHint: .isDirectory)
       defaultProjectsDir = homeURL.appending(path: ".claude/projects", directoryHint: .isDirectory)
+      defaultContextCacheDir = homeURL.appending(
+        path: ".cache/claude-context",
+        directoryHint: .isDirectory
+      )
+      defaultAntigravityDir = homeURL.appending(
+        path: ".gemini/antigravity-cli",
+        directoryHint: .isDirectory
+      )
+      defaultBrainSessionsStateDir = homeURL.appending(
+        path: ".local/state/brain-sessions",
+        directoryHint: .isDirectory
+      )
       defaultSupportDir = defaultAppSupportRoot.appending(
         path: resolvedBundleID,
         directoryHint: .isDirectory
@@ -122,6 +143,18 @@ nonisolated struct AppConfig: Equatable, Sendable {
     case .isolated, .selfCheck, .testing:
       defaultSessionsDir = isolatedRoot.appending(path: "claude-sessions", directoryHint: .isDirectory)
       defaultProjectsDir = isolatedRoot.appending(path: "claude-projects", directoryHint: .isDirectory)
+      defaultContextCacheDir = isolatedRoot.appending(
+        path: "claude-context",
+        directoryHint: .isDirectory
+      )
+      defaultAntigravityDir = isolatedRoot.appending(
+        path: "antigravity-cli",
+        directoryHint: .isDirectory
+      )
+      defaultBrainSessionsStateDir = isolatedRoot.appending(
+        path: "brain-sessions",
+        directoryHint: .isDirectory
+      )
       defaultSupportDir = isolatedRoot.appending(path: "app-support", directoryHint: .isDirectory)
       defaultSearchPaths = [isolatedRoot.appending(path: "empty-bin", directoryHint: .isDirectory).path]
     }
@@ -135,6 +168,21 @@ nonisolated struct AppConfig: Equatable, Sendable {
       key: "BRAIN_PANEL_CLAUDE_PROJECTS_DIR",
       in: environment,
       defaultURL: defaultProjectsDir
+    )
+    let claudeContextCacheDirectory = try parseOptionalDirectory(
+      key: "BRAIN_PANEL_CLAUDE_CONTEXT_CACHE_DIR",
+      in: environment,
+      defaultURL: defaultContextCacheDir
+    )
+    let antigravityDirectory = try parseOptionalDirectory(
+      key: "BRAIN_PANEL_ANTIGRAVITY_DIR",
+      in: environment,
+      defaultURL: defaultAntigravityDir
+    )
+    let brainSessionsStateDirectory = try parseOptionalDirectory(
+      key: "BRAIN_PANEL_BRAIN_SESSIONS_STATE_DIR",
+      in: environment,
+      defaultURL: defaultBrainSessionsStateDir
     )
     let appSupportDirectory = try parseOptionalDirectory(
       key: "BRAIN_PANEL_APP_SUPPORT_DIR",
@@ -163,6 +211,9 @@ nonisolated struct AppConfig: Equatable, Sendable {
       cacheTTLSeconds: cacheTTLSeconds,
       claudeSessionsDirectory: claudeSessionsDirectory,
       claudeProjectsDirectory: claudeProjectsDirectory,
+      claudeContextCacheDirectory: claudeContextCacheDirectory,
+      antigravityDirectory: antigravityDirectory,
+      brainSessionsStateDirectory: brainSessionsStateDirectory,
       appSupportDirectory: appSupportDirectory,
       cliSearchPaths: cliSearchPaths,
       childCLIEnvironment: childEnv

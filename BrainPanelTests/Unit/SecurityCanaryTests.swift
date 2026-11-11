@@ -19,6 +19,8 @@ final class SecurityCanaryTests: XCTestCase {
         environment: [
           "BRAIN_PANEL_MODE": canaryToken,
           "BRAIN_PANEL_CLAUDE_SESSIONS_DIR": canaryDocument,
+          "BRAIN_PANEL_CLAUDE_CONTEXT_CACHE_DIR": canaryToken,
+          "BRAIN_PANEL_ANTIGRAVITY_DIR": canaryDocument,
         ],
         defaultHomeDirectory: URL(filePath: "/Users/teste"),
         defaultAppSupportRoot: URL(filePath: "/Users/teste/Library/Application Support"),
@@ -55,15 +57,27 @@ final class SecurityCanaryTests: XCTestCase {
     let parsedUsage = try? ClaudeUsageParser.makeUsage(from: validClaudeWithCanary, now: clock.now())
     XCTAssertNotNil(parsedUsage)
 
-    // 4. Transcript JSONL contendo o canário no conteúdo da conversa
+    // 4. Transcripts JSONL (Claude e Antigravity) contendo o canário no conteúdo da conversa
     let transcriptLines: [Substring] = [
       Substring(
         #"{"type":"user","message":{"content":"Segredo \#(canaryToken) doc \#(canaryDocument)"}}"#
       ),
       #"{"type":"assistant","message":{"usage":{"input_tokens":1000,"cache_read_input_tokens":500,"cache_creation_input_tokens":0}}}"#,
     ]
-    let tokens = ClaudeTranscriptParser.contextTokens(in: transcriptLines)
-    XCTAssertEqual(tokens, 1_500)
+    let claudeSnapshot = ClaudeTranscriptParser.parse(lines: transcriptLines)
+    XCTAssertEqual(claudeSnapshot.contextTokens, 1_500)
+    XCTAssertNil(claudeSnapshot.sessionName)
+
+    let agyLines: [Substring] = [
+      Substring(
+        #"{"type":"USER_INPUT","content":"Segredo \#(canaryToken) doc \#(canaryDocument)"}"#
+      ),
+      Substring(
+        #"{"type":"PLANNER_RESPONSE","content":"\#(canaryToken)","thinking":"\#(canaryDocument)","input_tokens":2000,"cache_read_tokens":3000}"#
+      ),
+    ]
+    let agySnapshot = AntigravityTranscriptParser.parse(lines: agyLines)
+    XCTAssertEqual(agySnapshot.contextTokens, 5_000)
 
     // 5. Exceção inesperada externa contendo o canário passando pela UsageStore e pelo logger
     struct RawExternalFailure: Error, LocalizedError {

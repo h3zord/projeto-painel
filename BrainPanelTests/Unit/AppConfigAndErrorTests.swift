@@ -24,6 +24,12 @@ final class AppConfigAndErrorTests: XCTestCase {
     XCTAssertEqual(config.cacheTTLSeconds, 60)
     XCTAssertEqual(config.claudeSessionsDirectory.path, "/Users/teste/.claude/sessions")
     XCTAssertEqual(config.claudeProjectsDirectory.path, "/Users/teste/.claude/projects")
+    XCTAssertEqual(config.claudeContextCacheDirectory.path, "/Users/teste/.cache/claude-context")
+    XCTAssertEqual(config.antigravityDirectory.path, "/Users/teste/.gemini/antigravity-cli")
+    XCTAssertEqual(
+      config.brainSessionsStateDirectory.path,
+      "/Users/teste/.local/state/brain-sessions"
+    )
     XCTAssertEqual(config.childCLIEnvironment["LANG"], "en_US.UTF-8")
     XCTAssertEqual(config.childCLIEnvironment["TERM"], "xterm-256color")
   }
@@ -40,6 +46,9 @@ final class AppConfigAndErrorTests: XCTestCase {
     XCTAssertEqual(config.mode, .testing)
     XCTAssertFalse(config.claudeSessionsDirectory.path.contains("/Users/teste/.claude"))
     XCTAssertFalse(config.claudeProjectsDirectory.path.contains("/Users/teste/.claude"))
+    XCTAssertFalse(config.claudeContextCacheDirectory.path.contains("/Users/teste/.cache"))
+    XCTAssertFalse(config.antigravityDirectory.path.contains("/Users/teste/.gemini"))
+    XCTAssertFalse(config.brainSessionsStateDirectory.path.contains("/Users/teste/.local/state"))
     XCTAssertEqual(config.cliSearchPaths, ["/tmp/brain-panel-tests/brain-panel-isolated/empty-bin"])
   }
 
@@ -74,6 +83,18 @@ final class AppConfigAndErrorTests: XCTestCase {
     assertConfigFails(
       environment: ["BRAIN_PANEL_CLAUDE_PROJECTS_DIR": "/tmp/../etc"],
       expectedSetting: "BRAIN_PANEL_CLAUDE_PROJECTS_DIR"
+    )
+    assertConfigFails(
+      environment: ["BRAIN_PANEL_CLAUDE_CONTEXT_CACHE_DIR": "relativo/cache"],
+      expectedSetting: "BRAIN_PANEL_CLAUDE_CONTEXT_CACHE_DIR"
+    )
+    assertConfigFails(
+      environment: ["BRAIN_PANEL_ANTIGRAVITY_DIR": "/tmp/../gemini"],
+      expectedSetting: "BRAIN_PANEL_ANTIGRAVITY_DIR"
+    )
+    assertConfigFails(
+      environment: ["BRAIN_PANEL_BRAIN_SESSIONS_STATE_DIR": "relativo/state"],
+      expectedSetting: "BRAIN_PANEL_BRAIN_SESSIONS_STATE_DIR"
     )
     assertConfigFails(
       environment: ["BRAIN_PANEL_CLI_SEARCH_PATHS": "/usr/bin:relativo"],
