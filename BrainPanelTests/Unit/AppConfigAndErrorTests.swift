@@ -44,6 +44,7 @@ final class AppConfigAndErrorTests: XCTestCase {
       config.backupProgressFileURL.path,
       "/Users/teste/Brain/local/pages/backup-drive.json"
     )
+    XCTAssertEqual(config.brainPagesURL.absoluteString, "http://127.0.0.1:4780/")
     XCTAssertEqual(config.childCLIEnvironment["LANG"], "en_US.UTF-8")
     XCTAssertEqual(config.childCLIEnvironment["TERM"], "xterm-256color")
   }
@@ -134,6 +135,63 @@ final class AppConfigAndErrorTests: XCTestCase {
       environment: ["BRAIN_PANEL_CLI_SEARCH_PATHS": "/usr/bin:relativo"],
       expectedSetting: "BRAIN_PANEL_CLI_SEARCH_PATHS"
     )
+    assertConfigFails(
+      environment: ["BRAIN_PANEL_BRAIN_PAGES_URL": "https://example.com"],
+      expectedSetting: "BRAIN_PANEL_BRAIN_PAGES_URL"
+    )
+    assertConfigFails(
+      environment: ["BRAIN_PANEL_BRAIN_PAGES_URL": "http://192.168.1.50:4780/"],
+      expectedSetting: "BRAIN_PANEL_BRAIN_PAGES_URL"
+    )
+    assertConfigFails(
+      environment: ["BRAIN_PANEL_BRAIN_PAGES_URL": "http://127.0.0.1@evil.example.com:4780/"],
+      expectedSetting: "BRAIN_PANEL_BRAIN_PAGES_URL"
+    )
+    assertConfigFails(
+      environment: ["BRAIN_PANEL_BRAIN_PAGES_URL": "file:///etc/passwd"],
+      expectedSetting: "BRAIN_PANEL_BRAIN_PAGES_URL"
+    )
+    assertConfigFails(
+      environment: ["BRAIN_PANEL_BRAIN_PAGES_URL": "http://127.0.0.1:70000/"],
+      expectedSetting: "BRAIN_PANEL_BRAIN_PAGES_URL"
+    )
+    assertConfigFails(
+      environment: ["BRAIN_PANEL_BRAIN_PAGES_URL": ""],
+      expectedSetting: "BRAIN_PANEL_BRAIN_PAGES_URL"
+    )
+  }
+
+  func testAcceptsLoopbackBrainPagesURLVariants() throws {
+    for validURL in [
+      "http://127.0.0.1:4780/",
+      "http://localhost:4780/",
+      "http://localhost:9000/painel",
+      "http://127.0.0.1",
+    ] {
+      let parsed = try AppConfig.parse(
+        environment: [
+          "BRAIN_PANEL_MODE": "testing",
+          "BRAIN_PANEL_BRAIN_PAGES_URL": validURL,
+        ],
+        defaultHomeDirectory: homeURL,
+        defaultAppSupportRoot: appSupportURL,
+        defaultTemporaryRoot: tempURL,
+        bundleIdentifier: "com.h3zord.BrainPanel"
+      )
+      XCTAssertEqual(parsed.brainPagesURL.absoluteString, validURL)
+    }
+  }
+
+  func testBrainTabViewOpenerOnlyDispatchesValidatedLoopbackURLs() throws {
+    var openedURLs: [URL] = []
+    let safeURL = try XCTUnwrap(URL(string: "http://127.0.0.1:4780/"))
+    let externalURL = try XCTUnwrap(URL(string: "https://example.com/painel"))
+    let fileURL = URL(filePath: "/etc/passwd")
+
+    XCTAssertTrue(BrainTabView.openIfLoopbackSafe(safeURL) { openedURLs.append($0) })
+    XCTAssertFalse(BrainTabView.openIfLoopbackSafe(externalURL) { openedURLs.append($0) })
+    XCTAssertFalse(BrainTabView.openIfLoopbackSafe(fileURL) { openedURLs.append($0) })
+    XCTAssertEqual(openedURLs, [safeURL])
   }
 
   func testEveryPublishedAppErrorCodeIsProvokedAndSafeForDisplay() {

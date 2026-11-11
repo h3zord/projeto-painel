@@ -228,6 +228,41 @@ MUTANTS: list[MutantSpec] = [
         original="let isStalled = (nowEpoch - heartbeatEpoch) > stalledBackupThresholdSeconds",
         replacement="let isStalled = (nowEpoch - heartbeatEpoch) >= stalledBackupThresholdSeconds",
     ),
+    MutantSpec(
+        id="M29",
+        relative_file="BrainPanel/App/MenuBarPresentation.swift",
+        description="prioridade de hasCriticalFailure sobre waitingOnOwnerCount no rótulo da barra de menus",
+        original='if hasCriticalFailure {\n      return "\\(quotaText) · !"\n    }',
+        replacement='if hasCriticalFailure && waitingOnOwnerCount == 0 {\n      return "\\(quotaText) · !"\n    }',
+    ),
+    MutantSpec(
+        id="M30",
+        relative_file="BrainPanel/App/MenuBarPresentation.swift",
+        description="fronteira > 0 de waitingOnOwnerCount no rótulo inteligente da barra de menus",
+        original='if waitingOnOwnerCount > 0 {\n      return "\\(quotaText) · \\(waitingOnOwnerCount)"\n    }',
+        replacement='if waitingOnOwnerCount >= 0 {\n      return "\\(quotaText) · \\(waitingOnOwnerCount)"\n    }',
+    ),
+    MutantSpec(
+        id="M31",
+        relative_file="BrainPanel/Modules/Brain/Domain/BrainSnapshot.swift",
+        description="disparo do banner de atenção quando há falha crítica ou item esperando o dono",
+        original="hasCriticalFailure || waitingOnOwnerCount > 0",
+        replacement="hasCriticalFailure && waitingOnOwnerCount > 0",
+    ),
+    MutantSpec(
+        id="M32",
+        relative_file="BrainPanel/Shared/Config/AppConfig.swift",
+        description="restrição estrita a loopback (127.0.0.1 / localhost) em BRAIN_PANEL_BRAIN_PAGES_URL",
+        original='host == "127.0.0.1" || host == "localhost"',
+        replacement="!host.isEmpty",
+    ),
+    MutantSpec(
+        id="M33",
+        relative_file="BrainPanel/App/UsageStore.swift",
+        description="exposição de diagnóstico lastConversationsError quando a coleta de sessões falha",
+        original="lastConversationsError = appError",
+        replacement="lastConversationsError = nil",
+    ),
 ]
 
 

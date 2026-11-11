@@ -28,10 +28,12 @@ final class UsageStore {
   private(set) var providers: [ProviderUsage]
   private(set) var activeConversations: [ActiveConversation]
   private(set) var brainSnapshot: BrainSnapshot
+  private(set) var lastConversationsError: AppError?
   private(set) var lastUpdated: Date?
   private(set) var lastConversationsUpdated: Date?
   private(set) var lastBrainUpdated: Date?
   private(set) var isRefreshing = false
+  let brainPagesURL: URL
 
   private let collectors: [any UsageCollector]
   private let conversationCollector: (any ConversationCollecting)?
@@ -54,6 +56,7 @@ final class UsageStore {
     logger: StructuredLogger? = nil,
     refreshInterval: Duration = .seconds(300),
     cacheTTL: TimeInterval = 60,
+    brainPagesURL: URL = AppConfig.defaultBrainPagesURL,
     startPeriodicRefresh: Bool = true
   ) {
     self.providers = providers
@@ -66,6 +69,7 @@ final class UsageStore {
     self.logger = logger ?? StructuredLogger(clock: clock)
     self.refreshInterval = refreshInterval
     self.cacheTTL = cacheTTL
+    self.brainPagesURL = brainPagesURL
 
     guard
       startPeriodicRefresh,
@@ -102,15 +106,46 @@ final class UsageStore {
     clock.now()
   }
 
-  var menuBarLabel: String {
-    let lowestRemaining =
-      providers
+  private var lowestRemainingPercentage: Int? {
+    providers
       .filter { $0.sessionState.hasUsableQuota }
       .flatMap(\.limits)
       .map(\.remainingPercentage)
       .min()
+  }
 
-    return lowestRemaining.map { "\($0)%" } ?? "—"
+  private var lastRefreshDate: Date? {
+    let directTimestamps = [
+      lastUpdated,
+      lastConversationsUpdated,
+      lastBrainUpdated,
+      brainSnapshot.capturedAt,
+    ].compactMap { $0 }
+    return (directTimestamps + providers.compactMap(\.lastUpdatedAt)).max()
+  }
+
+  var menuBarLabel: String {
+    MenuBarPresentation.label(
+      lowestRemainingPercentage: lowestRemainingPercentage,
+      waitingOnOwnerCount: brainSnapshot.waitingOnOwnerCount,
+      hasCriticalFailure: brainSnapshot.hasCriticalFailure
+    )
+  }
+
+  var menuBarAccessibilityLabel: String {
+    MenuBarPresentation.accessibilityLabel(
+      lowestRemainingPercentage: lowestRemainingPercentage,
+      waitingOnOwnerCount: brainSnapshot.waitingOnOwnerCount,
+      hasCriticalFailure: brainSnapshot.hasCriticalFailure
+    )
+  }
+
+  func footerStatusSummary(now: Date) -> String {
+    MenuBarPresentation.footerStatusSummary(
+      lastRefreshAt: lastRefreshDate,
+      isRefreshing: isRefreshing,
+      now: now
+    )
   }
 
   func stopPeriodicRefresh() {
@@ -154,19 +189,31 @@ final class UsageStore {
       }
 
     if !conversationsAreFresh || !brainIsFresh {
-      await refreshLocalState()
+      _ = await refreshLocalState()
     }
   }
 
-  func refreshLocalState(refreshID: String? = nil) async {
-    guard conversationCollector != nil || brainCollector != nil else { return }
+  @discardableResult
+  func refreshLocalState(refreshID: String? = nil) async -> Bool {
+    guard conversationCollector != nil || brainCollector != nil else { return false }
     let correlationID = refreshID ?? nextRefreshID(prefix: "local")
 
-    if let conversationCollector {
-      do {
-        let conversations = try await conversationCollector.fetchActiveConversations()
+    let capturedConversationCollector = conversationCollector
+    let capturedBrainCollector = brainCollector
+
+    async let conversationsOutcome = Self.collectConversations(from: capturedConversationCollector)
+    async let brainOutcome = Self.collectBrainState(from: capturedBrainCollector)
+    let (resolvedConversations, resolvedBrain) = await (conversationsOutcome, brainOutcome)
+
+    var anyLocalSucceeded = false
+
+    if let resolvedConversations {
+      switch resolvedConversations {
+      case .success(let conversations):
         activeConversations = conversations
+        lastConversationsError = nil
         lastConversationsUpdated = clock.now()
+        anyLocalSucceeded = true
         logger.info(
           event: "sessions_refreshed",
           refreshID: correlationID,
@@ -176,8 +223,8 @@ final class UsageStore {
             .conversationsCount: "\(conversations.count)",
           ]
         )
-      } catch {
-        let appError = ErrorHandler.normalize(error)
+      case .failure(let appError):
+        lastConversationsError = appError
         logger.warn(
           event: "sessions_refresh_failed",
           refreshID: correlationID,
@@ -190,13 +237,14 @@ final class UsageStore {
       }
     }
 
-    if let brainCollector {
-      do {
-        let snapshot = try await brainCollector.fetchBrainState()
+    if let resolvedBrain {
+      switch resolvedBrain {
+      case .success(let snapshot):
         brainSnapshot = snapshot
         let degraded = snapshot.degradedSections
         if degraded.isEmpty {
           lastBrainUpdated = clock.now()
+          anyLocalSucceeded = true
           logger.info(
             event: "brain_state_refreshed",
             refreshID: correlationID,
@@ -224,8 +272,7 @@ final class UsageStore {
             ]
           )
         }
-      } catch {
-        let appError = ErrorHandler.normalize(error)
+      case .failure(let appError):
         logger.warn(
           event: "brain_state_refresh_failed",
           refreshID: correlationID,
@@ -237,6 +284,8 @@ final class UsageStore {
         )
       }
     }
+
+    return anyLocalSucceeded
   }
 
   func refresh() async {
@@ -257,10 +306,9 @@ final class UsageStore {
       fields: [.status: "started"]
     )
 
-    await refreshLocalState(refreshID: correlationID)
+    let localSucceeded = await refreshLocalState(refreshID: correlationID)
 
     guard !collectors.isEmpty else {
-      let localSucceeded = lastConversationsUpdated != nil || lastBrainUpdated != nil
       logRefreshCompleted(
         correlationID: correlationID,
         startedAt: startedAt,
@@ -338,6 +386,28 @@ final class UsageStore {
     )
   }
 
+  nonisolated private static func collectConversations(
+    from collector: (any ConversationCollecting)?
+  ) async -> Result<[ActiveConversation], AppError>? {
+    guard let collector else { return nil }
+    do {
+      return .success(try await collector.fetchActiveConversations())
+    } catch {
+      return .failure(ErrorHandler.normalize(error))
+    }
+  }
+
+  nonisolated private static func collectBrainState(
+    from collector: (any BrainStateCollecting)?
+  ) async -> Result<BrainSnapshot, AppError>? {
+    guard let collector else { return nil }
+    do {
+      return .success(try await collector.fetchBrainState())
+    } catch {
+      return .failure(ErrorHandler.normalize(error))
+    }
+  }
+
   private func nextRefreshID(prefix: String) -> String {
     refreshSequence += 1
     return "\(prefix)-\(refreshSequence)"
@@ -382,6 +452,7 @@ extension UsageStore {
         logger: resolvedLogger,
         refreshInterval: config.refreshInterval,
         cacheTTL: config.cacheTTL,
+        brainPagesURL: config.brainPagesURL,
         startPeriodicRefresh: true
       )
     case .isolated:
@@ -401,6 +472,7 @@ extension UsageStore {
         logger: resolvedLogger,
         refreshInterval: config.refreshInterval,
         cacheTTL: config.cacheTTL,
+        brainPagesURL: config.brainPagesURL,
         startPeriodicRefresh: true
       )
     case .selfCheck, .testing:
@@ -412,6 +484,7 @@ extension UsageStore {
         logger: resolvedLogger,
         refreshInterval: config.refreshInterval,
         cacheTTL: config.cacheTTL,
+        brainPagesURL: config.brainPagesURL,
         startPeriodicRefresh: false
       )
     }

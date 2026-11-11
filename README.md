@@ -12,13 +12,13 @@ O aplicativo reutiliza as sessões já autenticadas nas ferramentas de linha de 
 ## O que o aplicativo mostra
 
 - **Aba Cotas**
-  - Disponibilidade da janela de 5 horas e semanal para **Claude** e **Gemini**, com detalhamento por grupo de modelos e tempo restante até a renovação.
-  - Menor porcentagem restante visível diretamente no ícone da barra de menus.
+  - Disponibilidade da janela de 5 horas e semanal para **Claude** e **Gemini**, com detalhamento por grupo de modelos, tempo restante até a renovação e diferenciação visual entre carregamento inicial, leitura defasada (`stale`) e indisponibilidade pós-coleta.
+  - Rótulo inteligente na barra de menus combinando a menor cota restante (`42%` ou `—`) com alerta de falha crítica (`· !`) ou contagem de pendências do Brain (`· N`), além de banner compacto de atenção clicável quando o ecossistema requer ação do dono.
   - Resumo rápido das conversas ativas do Claude Code e do Antigravity.
 - **Aba Sessões**
-  - Lista de conversas do Claude Code (processo vivo via `kill -0`, janela real em `~/.cache/claude-context/<id>.json` ou janela presumida de `1.0M`) e do Antigravity (`agy`, janela `1_048_576` e nomes do `brain-sessions`), lendo até os últimos 4 MB de cada transcript `.jsonl` para calcular a ocupação percentual do contexto, detectar compactações automáticas (`compact_boundary` / `CHECKPOINT`) e sinalizar os limiares do Brain em **70%** (atenção) e **80%** (compactar no próximo ponto natural).
-- **Estado operacional do Brain (coletor nativo com falha parcial isolada)**
-  - Coleta local em `BrainPanel/Modules/Brain/` dos quatro blocos do ecossistema (`Esperando Você`, `Fila da Máquina`, `Saúde & Backup` e `Jobs Agendados`), suprimindo dados corporativos (`flexograv`) e sem decodificar corpos de mensagens entre sessões (`brain-mail`).
+  - Lista de conversas do Claude Code (processo vivo via `kill -0`, janela real em `~/.cache/claude-context/<id>.json` ou janela presumida de `1.0M`) e do Antigravity (`agy`, janela `1_048_576` e nomes do `brain-sessions`), lendo até os últimos 4 MB de cada transcript `.jsonl` para calcular a ocupação percentual do contexto, detectar compactações automáticas (`compact_boundary` / `CHECKPOINT`), sinalizar os limiares do Brain em **70%** (atenção) e **80%** (compactar no próximo ponto natural) e preservar a última lista válida com aviso de diagnóstico caso uma leitura falhe.
+- **Aba Brain (ecossistema nativo com falha parcial isolada e atalho `brain-pages`)**
+  - Quatro cartões nativos em `BrainPanel/Modules/Brain/Adapters/Views/` alimentados por coleta local em `BrainPanel/Modules/Brain/` (`Esperando Você & Correio`, `Fila da Máquina (brain-ci)`, `Saúde & Backup` e `Jobs Agendados`), suprimindo dados corporativos (`flexograv`), sem decodificar corpos de mensagens entre sessões (`brain-mail`), isolando falhas por seção e oferecendo atalho de 1 clique validado em loopback para o `brain-pages`.
 
 ---
 
@@ -78,6 +78,7 @@ Toda variável `BRAIN_PANEL_*` é validada de forma estrita na inicialização p
 - `BRAIN_PANEL_MODE`: `live` (padrão), `isolated`, `self_check` ou `testing`.
 - `BRAIN_PANEL_REFRESH_INTERVAL_SECONDS`: intervalo periódico de atualização de cotas (`10` a `3600`, padrão `300`).
 - `BRAIN_PANEL_CACHE_TTL_SECONDS`: tempo máximo de cache ao abrir o painel (`1` a `600`, padrão `60`).
+- `BRAIN_PANEL_BRAIN_PAGES_URL`: URL loopback opcional do painel web local `brain-pages` (`http://127.0.0.1` ou `http://localhost` com porta opcional, padrão `http://127.0.0.1:4780/`).
 - `BRAIN_PANEL_CLAUDE_SESSIONS_DIR`, `BRAIN_PANEL_CLAUDE_PROJECTS_DIR`, `BRAIN_PANEL_CLAUDE_CONTEXT_CACHE_DIR`, `BRAIN_PANEL_ANTIGRAVITY_DIR`, `BRAIN_PANEL_BRAIN_STATE_DIR`, `BRAIN_PANEL_BRAIN_SESSIONS_STATE_DIR`, `BRAIN_PANEL_LOGS_DIR`, `BRAIN_PANEL_LAUNCH_AGENTS_DIR`, `BRAIN_PANEL_BACKUP_PROGRESS_FILE`, `BRAIN_PANEL_APP_SUPPORT_DIR`, `BRAIN_PANEL_CLI_SEARCH_PATHS`: caminhos absolutos opcionais usados para isolamento ou customização.
 
 ---

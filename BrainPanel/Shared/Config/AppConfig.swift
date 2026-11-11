@@ -29,11 +29,21 @@ nonisolated struct AppConfig: Equatable, Sendable {
     "BRAIN_PANEL_LOGS_DIR",
     "BRAIN_PANEL_LAUNCH_AGENTS_DIR",
     "BRAIN_PANEL_BACKUP_PROGRESS_FILE",
+    "BRAIN_PANEL_BRAIN_PAGES_URL",
     "BRAIN_PANEL_APP_SUPPORT_DIR",
     "BRAIN_PANEL_CLI_SEARCH_PATHS",
   ]
 
   private static let passthroughChildKeys = ["HOME", "USER", "LOGNAME", "TMPDIR", "SHELL"]
+
+  static let defaultBrainPagesURL: URL = {
+    var components = URLComponents()
+    components.scheme = "http"
+    components.host = "127.0.0.1"
+    components.port = 4_780
+    components.path = "/"
+    return components.url ?? URL(filePath: "/")
+  }()
 
   let mode: RuntimeMode
   let bundleIdentifier: String
@@ -48,6 +58,7 @@ nonisolated struct AppConfig: Equatable, Sendable {
   let logsDirectory: URL
   let launchAgentsDirectory: URL
   let backupProgressFileURL: URL
+  let brainPagesURL: URL
   let appSupportDirectory: URL
   let cliSearchPaths: [String]
   let childCLIEnvironment: [String: String]
@@ -264,6 +275,7 @@ nonisolated struct AppConfig: Equatable, Sendable {
       in: environment,
       defaultURL: defaultBackupProgressFile
     )
+    let brainPagesURL = try parseBrainPagesURL(in: environment)
     let appSupportDirectory = try parseOptionalDirectory(
       key: "BRAIN_PANEL_APP_SUPPORT_DIR",
       in: environment,
@@ -298,6 +310,7 @@ nonisolated struct AppConfig: Equatable, Sendable {
       logsDirectory: logsDirectory,
       launchAgentsDirectory: launchAgentsDirectory,
       backupProgressFileURL: backupProgressFileURL,
+      brainPagesURL: brainPagesURL,
       appSupportDirectory: appSupportDirectory,
       cliSearchPaths: cliSearchPaths,
       childCLIEnvironment: childEnv
@@ -355,6 +368,57 @@ nonisolated struct AppConfig: Equatable, Sendable {
     }
     let validated = try validateAbsolutePath(raw, setting: key)
     return URL(filePath: validated, directoryHint: .notDirectory)
+  }
+
+  private static func parseBrainPagesURL(
+    in environment: [String: String]
+  ) throws(AppError) -> URL {
+    guard let raw = environment["BRAIN_PANEL_BRAIN_PAGES_URL"] else {
+      return defaultBrainPagesURL
+    }
+    return try validateLoopbackHTTPURL(raw, setting: "BRAIN_PANEL_BRAIN_PAGES_URL")
+  }
+
+  static func isSafeLoopbackPagesURL(_ url: URL) -> Bool {
+    (try? validateLoopbackHTTPURL(url.absoluteString, setting: "BRAIN_PANEL_BRAIN_PAGES_URL"))
+      != nil
+  }
+
+  private static func validateLoopbackHTTPURL(
+    _ raw: String,
+    setting: String
+  ) throws(AppError) -> URL {
+    guard
+      !raw.isEmpty,
+      raw.count <= maxPathLength,
+      !raw.contains("\0"),
+      raw.allSatisfy({ !$0.isWhitespace && !$0.isNewline }),
+      let components = URLComponents(string: raw),
+      components.scheme?.lowercased() == "http",
+      components.user == nil,
+      components.password == nil,
+      let host = components.host?.lowercased(),
+      host == "127.0.0.1" || host == "localhost"
+    else {
+      throw AppError.invalidConfiguration(setting: setting)
+    }
+
+    let withoutScheme = String(raw.dropFirst("http://".count))
+    let authority =
+      withoutScheme.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false)
+      .first.map(String.init) ?? ""
+    if authority.contains(":") {
+      guard let port = components.port, (1...65_535).contains(port) else {
+        throw AppError.invalidConfiguration(setting: setting)
+      }
+    } else if let port = components.port, !(1...65_535).contains(port) {
+      throw AppError.invalidConfiguration(setting: setting)
+    }
+
+    guard let url = components.url else {
+      throw AppError.invalidConfiguration(setting: setting)
+    }
+    return url
   }
 
   private static func parseSearchPaths(

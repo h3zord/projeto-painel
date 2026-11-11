@@ -13,6 +13,16 @@ struct ProviderDetailsView: View {
     }
   }
 
+  private var borderColor: Color {
+    if provider.sessionState.isUnavailable {
+      return Color.red.opacity(0.34)
+    }
+    if provider.sessionState.isStale {
+      return Color.orange.opacity(0.32)
+    }
+    return color.opacity(0.2)
+  }
+
   private var geminiGroups: [GeminiModelGroup] {
     var orderedNames: [String] = []
     var groups: [String: [UsageLimit]] = [:]
@@ -27,6 +37,28 @@ struct ProviderDetailsView: View {
     return orderedNames.map { GeminiModelGroup(name: $0, limits: groups[$0] ?? []) }
   }
 
+  @ViewBuilder
+  private var headerBadge: some View {
+    if provider.sessionState.isUnavailable {
+      Label(provider.sessionState.label, systemImage: "xmark.octagon.fill")
+        .font(.caption2.weight(.medium))
+        .foregroundStyle(.red)
+    } else if provider.sessionState.isStale {
+      Label(provider.sessionState.label, systemImage: "exclamationmark.triangle.fill")
+        .font(.caption2.weight(.medium))
+        .foregroundStyle(.orange)
+    } else if provider.sessionState.isLoading {
+      Label("Carregando…", systemImage: "clock")
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+    } else {
+      Label(provider.sessionState.label, systemImage: "circle.fill")
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+        .symbolRenderingMode(.monochrome)
+    }
+  }
+
   var body: some View {
     VStack(spacing: 9) {
       HStack {
@@ -35,20 +67,13 @@ struct ProviderDetailsView: View {
 
         Spacer()
 
-        if provider.sessionState.isStale {
-          Label(provider.sessionState.label, systemImage: "exclamationmark.triangle.fill")
-            .font(.caption2.weight(.medium))
-            .foregroundStyle(.orange)
-        } else {
-          Label(provider.sessionState.label, systemImage: "circle.fill")
-            .font(.caption2)
-            .foregroundStyle(.secondary)
-            .symbolRenderingMode(.monochrome)
-        }
+        headerBadge
       }
 
       if let reason = provider.unavailableReason {
-        UnavailableProviderMessage(reason: reason, color: color)
+        UnavailableProviderMessage(reason: reason)
+      } else if provider.sessionState.isLoading {
+        LoadingProviderMessage()
       } else {
         if case .stale(let reason, let lastUpdatedAt) = provider.sessionState {
           StaleProviderMessage(
@@ -73,10 +98,7 @@ struct ProviderDetailsView: View {
     .background(.background.opacity(0.62), in: RoundedRectangle(cornerRadius: 10))
     .overlay {
       RoundedRectangle(cornerRadius: 10)
-        .stroke(
-          provider.sessionState.isStale ? Color.orange.opacity(0.32) : color.opacity(0.2),
-          lineWidth: 0.5
-        )
+        .stroke(borderColor, lineWidth: 0.5)
     }
   }
 }
@@ -200,27 +222,50 @@ private struct StaleProviderMessage: View {
         RoundedRectangle(cornerRadius: 7)
           .stroke(Color.orange.opacity(0.24), lineWidth: 0.5)
       }
+      .accessibilityElement(children: .combine)
     }
+  }
+}
+
+private struct LoadingProviderMessage: View {
+  var body: some View {
+    Label {
+      Text("Aguardando leitura inicial em modo somente-leitura…")
+        .fixedSize(horizontal: false, vertical: true)
+    } icon: {
+      Image(systemName: "clock")
+        .foregroundStyle(.secondary)
+    }
+    .font(.caption2)
+    .foregroundStyle(.secondary)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(8)
+    .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 7))
+    .accessibilityElement(children: .combine)
   }
 }
 
 private struct UnavailableProviderMessage: View {
   let reason: String
-  let color: Color
 
   var body: some View {
     Label {
       Text(reason)
         .fixedSize(horizontal: false, vertical: true)
     } icon: {
-      Image(systemName: "exclamationmark.triangle.fill")
-        .foregroundStyle(color)
+      Image(systemName: "xmark.octagon.fill")
+        .foregroundStyle(.red)
     }
     .font(.caption)
-    .foregroundStyle(.secondary)
+    .foregroundStyle(.primary)
     .frame(maxWidth: .infinity, alignment: .leading)
     .padding(8)
-    .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
+    .background(Color.red.opacity(0.09), in: RoundedRectangle(cornerRadius: 7))
+    .overlay {
+      RoundedRectangle(cornerRadius: 7)
+        .stroke(Color.red.opacity(0.24), lineWidth: 0.5)
+    }
+    .accessibilityElement(children: .combine)
   }
 }
 

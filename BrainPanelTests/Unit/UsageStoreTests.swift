@@ -378,4 +378,264 @@ final class UsageStoreTests: XCTestCase {
     await store.refreshIfStale()
     XCTAssertEqual(brainCollector.callCount, 2)
   }
+
+  func testSmartMenuBarLabelAccessibilityAndFooterSummariesAcrossAllStates() async {
+    let clock = TestClock()
+    let claudeUsage = ProviderUsage(
+      id: "claude",
+      name: "Claude",
+      plan: "Max",
+      icon: .asset("ClaudeIcon"),
+      tint: .orange,
+      sessionState: .active,
+      limits: [
+        UsageLimit(
+          id: "claude-session",
+          name: "Sessão",
+          detail: nil,
+          window: .session,
+          usedPercentage: 58,
+          resetsAt: nil
+        )
+      ]
+    )
+
+    let waitingOnlySnapshot = BrainSnapshot(
+      waiting: .loaded(
+        WaitingState(
+          pendingPrompts: [
+            PendingPrompt(
+              sessionKey: "painel-lead",
+              askedAt: clock.now().addingTimeInterval(-60),
+              text: "Pergunta 1",
+              isExplicit: true,
+              hasButton: true
+            ),
+            PendingPrompt(
+              sessionKey: "caixa-lead",
+              askedAt: clock.now().addingTimeInterval(-30),
+              text: "Pergunta 2",
+              isExplicit: true,
+              hasButton: false
+            ),
+          ],
+          stuckMail: [],
+          closedMail: []
+        )
+      ),
+      ciQueue: .loaded(.empty),
+      healthAndBackup: .loaded(.empty),
+      scheduledJobs: .loaded(.empty),
+      capturedAt: clock.now()
+    )
+
+    let criticalAndWaitingSnapshot = BrainSnapshot(
+      waiting: waitingOnlySnapshot.waiting,
+      ciQueue: .loaded(.empty),
+      healthAndBackup: .loaded(
+        HealthAndBackupState(
+          doctorFailures: [
+            DoctorFinding(key: "FAIL 14", severity: .fail, message: "backup atrasado")
+          ],
+          doctorWarnings: [],
+          doctorCheckedAt: clock.now(),
+          testSuite: nil,
+          syncStatus: nil,
+          backupStatus: nil,
+          liveBackupProgress: nil
+        )
+      ),
+      scheduledJobs: .loaded(.empty),
+      capturedAt: clock.now()
+    )
+
+    let claudeCollector = StubUsageCollector(
+      providerID: "claude",
+      results: [
+        .failure(AppError.executableNotFound(.claude)),
+        .success(claudeUsage),
+        .success(claudeUsage),
+      ]
+    )
+    let brainCollector = StubBrainStateCollector(
+      results: [
+        .success(waitingOnlySnapshot),
+        .success(waitingOnlySnapshot),
+        .success(criticalAndWaitingSnapshot),
+      ]
+    )
+
+    let store = UsageStore(
+      collectors: [claudeCollector],
+      conversationCollector: nil,
+      brainCollector: brainCollector,
+      clock: clock,
+      startPeriodicRefresh: false
+    )
+
+    // Estado inicial antes da primeira leitura
+    XCTAssertEqual(store.menuBarLabel, "—")
+    XCTAssertEqual(store.menuBarAccessibilityLabel, "Brain Panel: cota indisponível")
+    XCTAssertEqual(store.footerStatusSummary(now: clock.now()), "Aguardando leitura")
+
+    // 1ª coleta: sem cota utilizável, mas com 2 pendências no Brain -> "— · 2"
+    await store.refresh()
+    XCTAssertEqual(store.menuBarLabel, "— · 2")
+    XCTAssertEqual(
+      store.menuBarAccessibilityLabel,
+      "Brain Panel: cota indisponível, 2 itens esperando você"
+    )
+    XCTAssertEqual(store.footerStatusSummary(now: clock.now()), "Atualizado há instantes")
+
+    // 2ª coleta: cota de 42% disponível + 2 pendências no Brain -> "42% · 2"
+    clock.advance(by: 120)
+    await store.refresh()
+    XCTAssertEqual(store.menuBarLabel, "42% · 2")
+    XCTAssertEqual(
+      store.menuBarAccessibilityLabel,
+      "Brain Panel: menor cota disponível 42%, 2 itens esperando você"
+    )
+
+    // 3ª coleta: falha crítica tem prioridade maior sobre contagem de pendências no rótulo curto -> "42% · !"
+    clock.advance(by: 180)
+    await store.refresh()
+    XCTAssertEqual(store.menuBarLabel, "42% · !")
+    XCTAssertEqual(
+      store.menuBarAccessibilityLabel,
+      "Brain Panel: menor cota disponível 42%, falha crítica no Brain, 2 itens esperando você"
+    )
+    clock.advance(by: 300)
+    XCTAssertEqual(store.footerStatusSummary(now: clock.now()), "Atualizado há 5m")
+  }
+
+  func testConversationCollectorFailurePreservesPreviousListAndExposesDiagnosticUntilRecovered()
+    async
+  {
+    let clock = TestClock()
+    let conversationCollector = StubConversationCollector(
+      results: [
+        .success(ActiveConversation.previewData),
+        .failure(AppError.transcriptReadFailed()),
+        .success([]),
+      ]
+    )
+
+    let store = UsageStore(
+      collectors: [],
+      conversationCollector: conversationCollector,
+      clock: clock,
+      startPeriodicRefresh: false
+    )
+
+    XCTAssertNil(store.lastConversationsError)
+    await store.refresh()
+    XCTAssertEqual(store.activeConversations.count, 2)
+    XCTAssertNil(store.lastConversationsError)
+
+    clock.advance(by: 60)
+    await store.refresh()
+    XCTAssertEqual(store.activeConversations.count, 2)
+    XCTAssertEqual(store.lastConversationsError?.code, .transcriptReadFailed)
+
+    clock.advance(by: 60)
+    await store.refresh()
+    XCTAssertTrue(store.activeConversations.isEmpty)
+    XCTAssertNil(store.lastConversationsError)
+  }
+
+  func testMenuBarPresentationSingularItemAndSynchronizingFooter() {
+    let now = Date(timeIntervalSince1970: 1_762_819_200)
+    XCTAssertEqual(
+      MenuBarPresentation.label(
+        lowestRemainingPercentage: nil,
+        waitingOnOwnerCount: 0,
+        hasCriticalFailure: true
+      ),
+      "— · !"
+    )
+    XCTAssertEqual(
+      MenuBarPresentation.accessibilityLabel(
+        lowestRemainingPercentage: 75,
+        waitingOnOwnerCount: 1,
+        hasCriticalFailure: false
+      ),
+      "Brain Panel: menor cota disponível 75%, 1 item esperando você"
+    )
+    XCTAssertEqual(
+      MenuBarPresentation.footerStatusSummary(
+        lastRefreshAt: nil,
+        isRefreshing: true,
+        now: now
+      ),
+      "Sincronizando…"
+    )
+  }
+
+  func testRefreshLocalStateRunsConversationAndBrainCollectorsInParallel() async {
+    let clock = TestClock()
+    let gate = ParallelCollectorRendezvousGate()
+
+    let conversationCollector = GateConversationCollector(gate: gate)
+    let brainCollector = GateBrainCollector(gate: gate)
+
+    let store = UsageStore(
+      collectors: [],
+      conversationCollector: conversationCollector,
+      brainCollector: brainCollector,
+      clock: clock,
+      startPeriodicRefresh: false
+    )
+
+    await store.refreshLocalState()
+    let maxInFlight = await gate.maxConcurrentParticipants
+    XCTAssertEqual(maxInFlight, 2)
+  }
+}
+
+private actor ParallelCollectorRendezvousGate {
+  private var arrivedCount = 0
+  private(set) var maxConcurrentParticipants = 0
+  private var continuations: [CheckedContinuation<Void, Never>] = []
+
+  func arriveAndWaitForPartner() async {
+    arrivedCount += 1
+    maxConcurrentParticipants = max(maxConcurrentParticipants, arrivedCount)
+    if arrivedCount >= 2 {
+      let pending = continuations
+      continuations.removeAll()
+      for continuation in pending {
+        continuation.resume()
+      }
+      return
+    }
+    await withCheckedContinuation { continuation in
+      continuations.append(continuation)
+    }
+  }
+}
+
+private nonisolated final class GateConversationCollector: ConversationCollecting {
+  private let gate: ParallelCollectorRendezvousGate
+
+  init(gate: ParallelCollectorRendezvousGate) {
+    self.gate = gate
+  }
+
+  func fetchActiveConversations() async throws -> [ActiveConversation] {
+    await gate.arriveAndWaitForPartner()
+    return []
+  }
+}
+
+private nonisolated final class GateBrainCollector: BrainStateCollecting {
+  private let gate: ParallelCollectorRendezvousGate
+
+  init(gate: ParallelCollectorRendezvousGate) {
+    self.gate = gate
+  }
+
+  func fetchBrainState() async throws -> BrainSnapshot {
+    await gate.arriveAndWaitForPartner()
+    return .empty
+  }
 }
