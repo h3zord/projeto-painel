@@ -7,6 +7,8 @@ Garante que:
    o histórico alcançável em HEAD.
 2. Os arquivos da árvore de trabalho (git ls-files) sejam copiados sem pipeline POSIX sh que engula código
    de saída: deleções não estagiadas são ignoradas, mas qualquer falha real de leitura/cópia reprova.
+3. Quando BRAIN_CI_CGROUP estiver definido e não vazio, os containers docker run (git e dir) recebam
+   --cgroup-parent com o valor exato antes da imagem Docker.
 """
 
 from __future__ import annotations
@@ -161,10 +163,13 @@ def invoke_gitleaks(
             if mode == "git"
             else []
         )
+        cgroup_parent = os.environ.get("BRAIN_CI_CGROUP", "")
+        cgroup_args = ["--cgroup-parent", cgroup_parent] if cgroup_parent else []
         cmd = [
             "docker",
             "run",
             "--rm",
+            *cgroup_args,
             *env_args,
             "-v",
             f"{mount_dir.resolve()}:{container_target}:ro",
