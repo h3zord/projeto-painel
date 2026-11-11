@@ -113,6 +113,55 @@ final class AppConfigAndErrorTests: XCTestCase {
     }
   }
 
+  func testBootstrapFailsClosedAndLogsBootFailedWithoutPreloadedConfig() throws {
+    let clock = TestClock()
+    let logSink = InMemoryLogSink()
+    let logger = StructuredLogger(clock: clock, sink: logSink)
+
+    var exitCode: Int32?
+    let failedResult = BrainPanelBootstrap.resolveConfigOrReportFailure(
+      preloaded: nil,
+      environmentLoader: {
+        try AppConfig.parse(
+          environment: ["BRAIN_PANEL_MODE": "invalido"],
+          defaultHomeDirectory: homeURL,
+          defaultAppSupportRoot: appSupportURL,
+          defaultTemporaryRoot: tempURL,
+          bundleIdentifier: "com.h3zord.BrainPanel"
+        )
+      },
+      logger: logger,
+      exitHandler: { code in exitCode = code }
+    )
+
+    XCTAssertNil(failedResult)
+    XCTAssertEqual(exitCode, EXIT_FAILURE)
+    XCTAssertTrue(
+      logSink.lines.contains {
+        $0.contains("\"event\":\"boot_failed\"")
+          && $0.contains("\"error_code\":\"CONFIG_INVALID\"")
+          && $0.contains("\"setting\":\"BRAIN_PANEL_MODE\"")
+      }
+    )
+
+    let validPreloaded = try AppConfig.parse(
+      environment: ["BRAIN_PANEL_MODE": "testing"],
+      defaultHomeDirectory: homeURL,
+      defaultAppSupportRoot: appSupportURL,
+      defaultTemporaryRoot: tempURL,
+      bundleIdentifier: "com.h3zord.BrainPanel"
+    )
+    var secondExitCode: Int32?
+    let preloadedResult = BrainPanelBootstrap.resolveConfigOrReportFailure(
+      preloaded: validPreloaded,
+      environmentLoader: { throw AppError.invalidConfiguration(setting: "IGNORADA") },
+      logger: logger,
+      exitHandler: { code in secondExitCode = code }
+    )
+    XCTAssertEqual(preloadedResult, validPreloaded)
+    XCTAssertNil(secondExitCode)
+  }
+
   private func assertConfigFails(environment: [String: String], expectedSetting: String) {
     XCTAssertThrowsError(
       try AppConfig.parse(

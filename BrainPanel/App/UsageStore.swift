@@ -111,22 +111,28 @@ final class UsageStore {
   func refreshIfStale() async {
     let now = clock.now()
 
-    if let lastConversationsUpdated,
-      now.timeIntervalSince(lastConversationsUpdated) < cacheTTL
-    {
-      // Estado local de sessões ainda está dentro da janela de cache.
-    } else {
-      let refreshID = nextRefreshID(prefix: "local")
-      await refreshLocalState(refreshID: refreshID)
-    }
+    let quotasAreFresh =
+      if let lastUpdated {
+        now.timeIntervalSince(lastUpdated) < cacheTTL
+      } else {
+        false
+      }
 
-    if let lastUpdated,
-      clock.now().timeIntervalSince(lastUpdated) < cacheTTL
-    {
+    guard quotasAreFresh else {
+      await refresh()
       return
     }
 
-    await refresh()
+    let conversationsAreFresh =
+      if let lastConversationsUpdated {
+        now.timeIntervalSince(lastConversationsUpdated) < cacheTTL
+      } else {
+        false
+      }
+
+    if !conversationsAreFresh {
+      await refreshLocalState()
+    }
   }
 
   func refreshLocalState(refreshID: String? = nil) async {

@@ -1,0 +1,184 @@
+#!/usr/bin/env python3
+"""Prova automatizada do portão scripts/run-gitleaks (falhas + controle em git worktree)."""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import signal
+import subprocess
+import sys
+from pathlib import Path
+
+
+def git(repo: Path, *args: str) -> None:
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "-c",
+            "user.name=GateTest",
+            "-c",
+            "user.email=gatetest@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            *args,
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def run_gate(script: Path, work_dir: Path, repo: Path, custom_cmd: list[str] | None = None) -> subprocess.CompletedProcess[str]:
+    cmd = [sys.executable, str(script), str(work_dir), "--repo", str(repo)]
+    if custom_cmd is not None:
+        cmd.extend(["--gitleaks-cmd-json", json.dumps(custom_cmd)])
+    return subprocess.run(cmd, capture_output=True, text=True, check=False)
+
+
+def main() -> int:
+    repo_root = Path.cwd().resolve()
+    script = repo_root / "scripts" / "run-gitleaks"
+    sandbox = repo_root / "local" / "tmp" / f"gitleaks-gates-{os.getpid()}"
+
+    def handle_signal(signum: int, _frame: object) -> None:
+        if sandbox.exists():
+            shutil.rmtree(sandbox, ignore_errors=True)
+        sys.exit(130 if signum == signal.SIGINT else 143)
+
+    signal.signal(signal.SIGINT, handle_signal)
+    signal.signal(signal.SIGTERM, handle_signal)
+
+    unreadable_file: Path | None = None
+    try:
+        sandbox.mkdir(parents=True, exist_ok=True)
+        origin_repo = sandbox / "origin"
+        origin_repo.mkdir()
+        git(origin_repo, "init", "--quiet")
+        (origin_repo / "README.md").write_text("projeto limpo\n", encoding="utf-8")
+        (origin_repo / "deletado-depois.txt").write_text("sera removido sem git rm\n", encoding="utf-8")
+        git(origin_repo, "add", "README.md", "deletado-depois.txt")
+        git(origin_repo, "commit", "--quiet", "-m", "chore: inicial")
+
+        wt_clean = sandbox / "wt-clean"
+        git(origin_repo, "worktree", "add", "--quiet", "--detach", str(wt_clean), "HEAD")
+        (wt_clean / "extra.txt").write_text("commit exclusivo na worktree\n", encoding="utf-8")
+        git(wt_clean, "add", "extra.txt")
+        git(wt_clean, "commit", "--quiet", "-m", "feat: commit na worktree")
+        # Deleção não estagiada não deve quebrar a montagem da árvore:
+        (wt_clean / "deletado-depois.txt").unlink()
+
+        # 1. Reprova se gitleaks sair 0 reportando erro fatal de git / 0 commits scanned
+        fake_err_script = sandbox / "fake-gl-err.py"
+        fake_err_script.write_text(
+            "import sys\n"
+            "sys.stderr.write('ERR [git] fatal: not a git repository\\nINF 0 commits scanned.\\nINF no leaks found\\n')\n"
+            "sys.exit(0)\n",
+            encoding="utf-8",
+        )
+        res1 = run_gate(script, sandbox / "scan1", wt_clean, [sys.executable, str(fake_err_script)])
+        if res1.returncode == 0 or "erro de execução/repositório" not in res1.stderr:
+            print(
+                f"gitleaks-gates: falhou ao reprovar saída com ERR [git] fatal e exit 0: {res1.stderr}",
+                file=sys.stderr,
+            )
+            return 1
+
+        # 2. Reprova se gitleaks sair 0 mas escanear menos commits do que HEAD possui
+        fake_zero_script = sandbox / "fake-gl-zero.py"
+        fake_zero_script.write_text(
+            "import sys\n"
+            "sys.stderr.write('INF 0 commits scanned.\\nINF no leaks found\\n')\n"
+            "sys.exit(0)\n",
+            encoding="utf-8",
+        )
+        res2 = run_gate(script, sandbox / "scan2", wt_clean, [sys.executable, str(fake_zero_script)])
+        if res2.returncode == 0 or "escaneou apenas 0 commit(s)" not in res2.stderr:
+            print(
+                f"gitleaks-gates: falhou ao reprovar contagem '0 commits scanned': {res2.stderr}",
+                file=sys.stderr,
+            )
+            return 1
+
+        # 3. Reprova erro real de cópia na árvore (entrada rastreada não regular ou arquivo sem leitura)
+        fifo_repo = sandbox / "fifo-repo"
+        shutil.copytree(origin_repo, fifo_repo)
+        (fifo_repo / "README.md").unlink()
+        os.mkfifo(fifo_repo / "README.md")
+        fake_ok_script = sandbox / "fake-gl-ok.py"
+        fake_ok_script.write_text(
+            "import sys\n"
+            "sys.stderr.write('INF 2 commits scanned.\\nINF no leaks found\\n')\n"
+            "sys.exit(0)\n",
+            encoding="utf-8",
+        )
+        res3 = run_gate(script, sandbox / "scan3", fifo_repo, [sys.executable, str(fake_ok_script)])
+        if res3.returncode == 0 or "entrada não regular inesperada" not in res3.stderr:
+            print(
+                f"gitleaks-gates: falhou ao reprovar entrada ilegível/não regular na árvore: {res3.stderr}",
+                file=sys.stderr,
+            )
+            return 1
+
+        if os.geteuid() != 0:
+            (fifo_repo / "README.md").unlink()
+            unreadable_file = fifo_repo / "README.md"
+            unreadable_file.write_text("conteudo bloqueado\n", encoding="utf-8")
+            os.chmod(unreadable_file, 0o000)
+            res3b = run_gate(script, sandbox / "scan3b", fifo_repo, [sys.executable, str(fake_ok_script)])
+            os.chmod(unreadable_file, 0o600)
+            unreadable_file = None
+            if res3b.returncode == 0 or "Permission denied" not in res3b.stderr:
+                print(
+                    f"gitleaks-gates: falhou ao reprovar arquivo sem permissão de leitura: {res3b.stderr}",
+                    file=sys.stderr,
+                )
+                return 1
+
+        # 4. Controle real em git worktree (com deleção não estagiada): deve passar (exit 0)
+        res_pass = run_gate(script, sandbox / "scan-pass", wt_clean)
+        if res_pass.returncode != 0:
+            print(
+                f"gitleaks-gates: controle limpo em git worktree reprovou indevidamente:\n{res_pass.stderr}",
+                file=sys.stderr,
+            )
+            return 1
+        if "2 commits scanned" not in res_pass.stderr:
+            print(
+                f"gitleaks-gates: controle em git worktree não escaneou os 2 commits esperados:\n{res_pass.stderr}",
+                file=sys.stderr,
+            )
+            return 1
+
+        # 5. Falha real em git worktree com segredo sintético no histórico: deve reprovar (exit != 0)
+        wt_leak = sandbox / "wt-leak"
+        git(origin_repo, "worktree", "add", "--quiet", "--detach", str(wt_leak), "HEAD")
+        synthetic_token = "".join(["gh", "p_", "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"])
+        (wt_leak / "cred.env").write_text(f"API_TOKEN={synthetic_token}\n", encoding="utf-8")
+        git(wt_leak, "add", "cred.env")
+        git(wt_leak, "commit", "--quiet", "-m", "test: commit com token sintetico")
+        # Mesmo que o arquivo seja removido num commit seguinte, o histórico da worktree deve acusar:
+        git(wt_leak, "rm", "--quiet", "cred.env")
+        git(wt_leak, "commit", "--quiet", "-m", "test: remove arquivo mas deixa no historico")
+
+        res_leak = run_gate(script, sandbox / "scan-leak", wt_leak)
+        if res_leak.returncode == 0:
+            print(
+                "gitleaks-gates: gitleaks real deixou passar segredo no histórico da git worktree",
+                file=sys.stderr,
+            )
+            return 1
+
+        return 0
+    finally:
+        if unreadable_file is not None and unreadable_file.exists():
+            os.chmod(unreadable_file, 0o600)
+        if sandbox.exists():
+            shutil.rmtree(sandbox, ignore_errors=True)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

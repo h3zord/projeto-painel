@@ -21,7 +21,7 @@ A metodologia padrão prevê a execução integral do `make ci` dentro de contai
      - `scripts/check-gates` e sua prova `scripts/gates/test`;
      - `scripts/check-swift` e sua prova `scripts/swift-gates/test`;
      - `scripts/check-docs` (integridade de caminhos/alvos em `AGENTS.md`, `README.md` e `docs/adr/`, fronteiras de imports de `Domain`/`Application` e ausência de referências legadas);
-     - varredura de segredos no histórico e na árvore de trabalho via Docker (`zricethezav/gitleaks:v8.30.1`).
+     - varredura de segredos no histórico e na árvore de trabalho via `scripts/run-gitleaks` (`zricethezav/gitleaks:v8.30.1` em Docker, com prova em `scripts/gitleaks-gates/test`, compatível com `git worktree` e clones rasos).
    - `.github/workflows/ci.yml` executa `make ci-portable` em `ubuntu-latest` (com `actions/checkout` fixado por SHA de 40 caracteres, `permissions: contents: read` e disparo apenas fora de draft e no push da `main`).
 
 3. **Isolamento de diretórios temporários:**

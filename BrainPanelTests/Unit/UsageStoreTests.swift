@@ -89,16 +89,72 @@ final class UsageStoreTests: XCTestCase {
 
     await store.refreshIfStale()
     XCTAssertEqual(claudeCollector.callCount, 1)
-    XCTAssertEqual(conversationCollector.callCount, 2)  // local inicial + refresh completo inicial
+    XCTAssertEqual(conversationCollector.callCount, 1)
 
     clock.advance(by: 59)
     await store.refreshIfStale()
     XCTAssertEqual(claudeCollector.callCount, 1)
-    XCTAssertEqual(conversationCollector.callCount, 2)
+    XCTAssertEqual(conversationCollector.callCount, 1)
 
     clock.advance(by: 1)
     await store.refreshIfStale()
     XCTAssertEqual(claudeCollector.callCount, 2)
+    XCTAssertEqual(conversationCollector.callCount, 2)
+  }
+
+  func testRefreshIfStaleRefreshesOnlyLocalSessionsWhenQuotasAreFreshAndSessionsFailed() async {
+    let clock = TestClock()
+    let logSink = InMemoryLogSink()
+    let logger = StructuredLogger(clock: clock, sink: logSink)
+
+    let claudeUsage = ProviderUsage(
+      id: "claude",
+      name: "Claude",
+      plan: "Pro",
+      icon: .asset("ClaudeIcon"),
+      tint: .orange,
+      sessionState: .active,
+      limits: [
+        UsageLimit(
+          id: "claude-session", name: "Sessão", detail: nil, window: .session, usedPercentage: 10,
+          resetsAt: nil)
+      ]
+    )
+    let claudeCollector = StubUsageCollector(providerID: "claude", results: [.success(claudeUsage)])
+    let conversationCollector = StubConversationCollector(
+      results: [
+        .failure(AppError.transcriptReadFailed()),
+        .success(ActiveConversation.previewData),
+      ]
+    )
+
+    let store = UsageStore(
+      collectors: [claudeCollector],
+      conversationCollector: conversationCollector,
+      clock: clock,
+      logger: logger,
+      cacheTTL: 60,
+      startPeriodicRefresh: false
+    )
+
+    await store.refreshIfStale()
+    XCTAssertEqual(claudeCollector.callCount, 1)
+    XCTAssertEqual(conversationCollector.callCount, 1)
+    XCTAssertTrue(store.activeConversations.isEmpty)
+    XCTAssertTrue(
+      logSink.lines.contains {
+        $0.contains("\"event\":\"sessions_refresh_failed\"")
+          && $0.contains("\"error_code\":\"TRANSCRIPT_READ_FAILED\"")
+      }
+    )
+
+    // Cotas continuam frescas (t = 10 s), mas lastConversationsUpdated permaneceu nil devido à falha:
+    // refreshIfStale deve atualizar apenas as sessões locais (1x), sem rechamar o coletor de cotas.
+    clock.advance(by: 10)
+    await store.refreshIfStale()
+    XCTAssertEqual(claudeCollector.callCount, 1)
+    XCTAssertEqual(conversationCollector.callCount, 2)
+    XCTAssertEqual(store.activeConversations.count, 2)
   }
 
   func testPreservesLastValidReadingWhenSubsequentRefreshFails() async {

@@ -72,11 +72,90 @@ final class ActiveConversationCollectorIntegrationTests: XCTestCase {
     XCTAssertEqual(conversations[1].statusLevel, .normal)
 
     // Confere leitura tail com limite menor que o tamanho total do arquivo
-    let tailTokens = ActiveConversationCollector.contextTokensOfTranscript(
+    let tailTokens = try ActiveConversationCollector.contextTokensOfTranscript(
       at: devTranscriptURL,
       maxTailBytes: 512
     )
     XCTAssertEqual(tailTokens, 82_500)
+  }
+
+  func testReturnsEmptyWhenClaudeDirectoriesDoNotExistYet() async throws {
+    let tempRoot = try makeIsolatedTmpDirectory()
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let collector = ActiveConversationCollector(
+      claudeSessionsURL: tempRoot.appending(path: "inexistente-sessions", directoryHint: .isDirectory),
+      claudeProjectsURL: tempRoot.appending(path: "inexistente-projects", directoryHint: .isDirectory),
+      isProcessAlive: { _ in true }
+    )
+
+    let conversations = try await collector.fetchActiveConversations()
+    XCTAssertTrue(conversations.isEmpty)
+  }
+
+  func testThrowsTranscriptReadFailedWhenSessionsOrProjectsDirectoryCannotBeRead() async throws {
+    let tempRoot = try makeIsolatedTmpDirectory()
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let validSessionsDir = tempRoot.appending(path: "sessions", directoryHint: .isDirectory)
+    let validProjectsDir = tempRoot.appending(path: "projects", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: validSessionsDir, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: validProjectsDir, withIntermediateDirectories: true)
+
+    let regularFileInsteadOfDir = tempRoot.appending(path: "arquivo-regular.txt")
+    try writeJSON("nao e diretorio", to: regularFileInsteadOfDir)
+
+    let badSessionsCollector = ActiveConversationCollector(
+      claudeSessionsURL: regularFileInsteadOfDir,
+      claudeProjectsURL: validProjectsDir,
+      isProcessAlive: { _ in true }
+    )
+    await assertThrowsTranscriptReadFailed {
+      _ = try await badSessionsCollector.fetchActiveConversations()
+    }
+
+    let badProjectsCollector = ActiveConversationCollector(
+      claudeSessionsURL: validSessionsDir,
+      claudeProjectsURL: regularFileInsteadOfDir,
+      isProcessAlive: { _ in true }
+    )
+    await assertThrowsTranscriptReadFailed {
+      _ = try await badProjectsCollector.fetchActiveConversations()
+    }
+
+    if geteuid() != 0 {
+      let lockedSessionsDir = tempRoot.appending(path: "locked-sessions", directoryHint: .isDirectory)
+      try FileManager.default.createDirectory(at: lockedSessionsDir, withIntermediateDirectories: true)
+      try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: lockedSessionsDir.path)
+      defer {
+        try? FileManager.default.setAttributes(
+          [.posixPermissions: 0o700], ofItemAtPath: lockedSessionsDir.path)
+      }
+
+      let lockedCollector = ActiveConversationCollector(
+        claudeSessionsURL: lockedSessionsDir,
+        claudeProjectsURL: validProjectsDir,
+        isProcessAlive: { _ in true }
+      )
+      await assertThrowsTranscriptReadFailed {
+        _ = try await lockedCollector.fetchActiveConversations()
+      }
+    }
+  }
+
+  private func assertThrowsTranscriptReadFailed(
+    _ operation: () async throws -> Void,
+    file: StaticString = #filePath,
+    line: UInt = #line
+  ) async {
+    do {
+      try await operation()
+      XCTFail("Esperava AppError.transcriptReadFailed()", file: file, line: line)
+    } catch let appError as AppError {
+      XCTAssertEqual(appError.code, .transcriptReadFailed, file: file, line: line)
+    } catch {
+      XCTFail("Erro inesperado: \(error)", file: file, line: line)
+    }
   }
 
   private func makeIsolatedTmpDirectory() throws -> URL {

@@ -12,7 +12,7 @@ Aplicativo nativo de barra de menus para macOS (`Brain Panel.app`, `com.h3zord.B
 | `make up` / `make down` | Compila em Debug (em `local/tmp/dev-derived-data`) e inicia ou encerra o `Brain Panel.app` de desenvolvimento |
 | `make test` | Roda os testes unitários isolados (`BrainPanelUnitTests`) com timeout por teste e zero repetições |
 | `make check` | Portão rápido do `scripts/hooks/pre-push`: `make ci-portable`, lint/formato (`xcrun swift-format`) e `make test` |
-| `make ci-portable` | Travas portáveis (Linux e macOS): `scripts/check-gates`, `scripts/check-swift`, `scripts/check-docs` e `gitleaks` em Docker |
+| `make ci-portable` | Travas portáveis (Linux e macOS): `scripts/check-gates`, `scripts/check-swift`, `scripts/check-docs` e `scripts/run-gitleaks` (com `scripts/gitleaks-gates/test`) |
 | `make ci` | Portão completo nativo: `make check`, testes de integração (`BrainPanelIntegrationTests`), build Release e `scripts/smoke-app` |
 | `make mutation` | Teste de mutação no domínio crítico via `scripts/run-mutation` sobre cópia isolada em `local/tmp/` |
 | `make format` | Formata `BrainPanel/` e `BrainPanelTests/` com `.swift-format` |

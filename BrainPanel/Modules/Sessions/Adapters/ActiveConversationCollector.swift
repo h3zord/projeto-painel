@@ -68,12 +68,12 @@ nonisolated struct ActiveConversationCollector: ConversationCollecting {
 
   @concurrent
   func fetchActiveConversations() async throws -> [ActiveConversation] {
-    let sessions = openSessions()
+    let sessions = try openSessions()
     var conversations: [ActiveConversation] = []
     conversations.reserveCapacity(sessions.count)
 
     for session in sessions {
-      let tokens = Self.contextTokensOfTranscript(at: session.transcriptURL)
+      let tokens = try Self.contextTokensOfTranscript(at: session.transcriptURL)
       conversations.append(
         ActiveConversation(
           id: session.transcriptURL.path,
@@ -91,17 +91,26 @@ nonisolated struct ActiveConversationCollector: ConversationCollecting {
     return conversations.sorted { ($0.contextTokens ?? 0) > ($1.contextTokens ?? 0) }
   }
 
-  func openSessions() -> [OpenSession] {
+  func openSessions() throws(AppError) -> [OpenSession] {
+    let sessionFiles = try Self.jsonFiles(in: claudeSessionsURL)
+    let projectDirectories = try Self.listDirectory(
+      claudeProjectsURL,
+      keys: [.isDirectoryKey]
+    )
+
     var results: [OpenSession] = []
     var seenPaths: Set<String> = []
     let decoder = JSONDecoder()
 
-    for fileURL in Self.jsonFiles(in: claudeSessionsURL) {
+    for fileURL in sessionFiles {
       guard
         let record = Self.loadSessionRecord(at: fileURL, decoder: decoder),
         processAliveChecker(record.pid),
         Self.isSafeSessionIdentifier(record.sessionId),
-        let transcriptURL = claudeTranscript(for: record.sessionId)
+        let transcriptURL = Self.claudeTranscript(
+          for: record.sessionId,
+          in: projectDirectories
+        )
       else {
         continue
       }
@@ -131,8 +140,8 @@ nonisolated struct ActiveConversationCollector: ConversationCollecting {
   static func contextTokensOfTranscript(
     at url: URL,
     maxTailBytes: Int = tailByteCount
-  ) -> Int? {
-    guard let lines = tailLines(at: url, maxBytes: maxTailBytes) else {
+  ) throws(AppError) -> Int? {
+    guard let lines = try tailLines(at: url, maxBytes: maxTailBytes) else {
       return nil
     }
     return ClaudeTranscriptParser.contextTokens(in: lines)
@@ -146,17 +155,47 @@ nonisolated struct ActiveConversationCollector: ConversationCollecting {
       && !identifier.contains("\0")
   }
 
-  private static func jsonFiles(in directory: URL) -> [URL] {
-    guard
-      let urls = try? FileManager.default.contentsOfDirectory(
+  private static func isMissingPathError(_ error: NSError, at url: URL) -> Bool {
+    let isBrokenSymlink =
+      (try? FileManager.default.destinationOfSymbolicLink(atPath: url.path)) != nil
+    if isBrokenSymlink {
+      return false
+    }
+    if error.domain == NSCocoaErrorDomain && error.code == CocoaError.fileReadNoSuchFile.rawValue {
+      return true
+    }
+    if error.domain == NSPOSIXErrorDomain && error.code == Int(ENOENT) {
+      return true
+    }
+    if let underlying = error.userInfo[NSUnderlyingErrorKey] as? NSError,
+      underlying.domain == NSPOSIXErrorDomain && underlying.code == Int(ENOENT)
+    {
+      return true
+    }
+    return false
+  }
+
+  private static func listDirectory(
+    _ directory: URL,
+    keys: [URLResourceKey] = []
+  ) throws(AppError) -> [URL] {
+    do {
+      return try FileManager.default.contentsOfDirectory(
         at: directory,
-        includingPropertiesForKeys: nil,
+        includingPropertiesForKeys: keys,
         options: [.skipsHiddenFiles]
       )
-    else {
-      return []
+    } catch {
+      let nsError = error as NSError
+      if isMissingPathError(nsError, at: directory) {
+        return []
+      }
+      throw AppError.transcriptReadFailed()
     }
+  }
 
+  private static func jsonFiles(in directory: URL) throws(AppError) -> [URL] {
+    let urls = try listDirectory(directory)
     return
       urls
       .filter { $0.pathExtension == "json" }
@@ -176,17 +215,10 @@ nonisolated struct ActiveConversationCollector: ConversationCollecting {
     return try? decoder.decode(SessionRecord.self, from: data)
   }
 
-  private func claudeTranscript(for sessionID: String) -> URL? {
-    guard
-      let projectDirectories = try? FileManager.default.contentsOfDirectory(
-        at: claudeProjectsURL,
-        includingPropertiesForKeys: [.isDirectoryKey],
-        options: [.skipsHiddenFiles]
-      )
-    else {
-      return nil
-    }
-
+  private static func claudeTranscript(
+    for sessionID: String,
+    in projectDirectories: [URL]
+  ) -> URL? {
     let targetFilename = "\(sessionID).jsonl"
     var newestURL: URL?
     var newestDate: Date = .distantPast
@@ -206,24 +238,43 @@ nonisolated struct ActiveConversationCollector: ConversationCollecting {
     return newestURL
   }
 
-  private static func tailLines(at url: URL, maxBytes: Int) -> [Substring]? {
-    guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
-    defer { try? handle.close() }
-
-    guard let totalSize = try? handle.seekToEnd() else { return nil }
-    let clampedMax = max(maxBytes, 1)
-    let startOffset = totalSize > UInt64(clampedMax) ? totalSize - UInt64(clampedMax) : 0
-    try? handle.seek(toOffset: startOffset)
-
-    guard let data = try? handle.readToEnd(), !data.isEmpty else { return [] }
-    let text = String(decoding: data, as: UTF8.self)
-    var rawLines = text.split(separator: "\n", omittingEmptySubsequences: false)
-
-    // Ao buscar no meio do arquivo, a primeira fatia pode ser o fim truncado de uma linha anterior.
-    if startOffset > 0, !rawLines.isEmpty {
-      rawLines.removeFirst()
+  private static func tailLines(at url: URL, maxBytes: Int) throws(AppError) -> [Substring]? {
+    do {
+      let values = try url.resourceValues(forKeys: [.isRegularFileKey])
+      guard values.isRegularFile == true else {
+        throw AppError.transcriptReadFailed()
+      }
+    } catch let appError as AppError {
+      throw appError
+    } catch {
+      let nsError = error as NSError
+      if isMissingPathError(nsError, at: url) {
+        return nil
+      }
+      throw AppError.transcriptReadFailed()
     }
 
-    return rawLines.filter { !$0.isEmpty }
+    do {
+      let handle = try FileHandle(forReadingFrom: url)
+      defer { try? handle.close() }
+
+      let totalSize = try handle.seekToEnd()
+      let clampedMax = max(maxBytes, 1)
+      let startOffset = totalSize > UInt64(clampedMax) ? totalSize - UInt64(clampedMax) : 0
+      try handle.seek(toOffset: startOffset)
+
+      guard let data = try handle.readToEnd(), !data.isEmpty else { return [] }
+      let text = String(decoding: data, as: UTF8.self)
+      var rawLines = text.split(separator: "\n", omittingEmptySubsequences: false)
+
+      // Ao buscar no meio do arquivo, a primeira fatia pode ser o fim truncado de uma linha anterior.
+      if startOffset > 0, !rawLines.isEmpty {
+        rawLines.removeFirst()
+      }
+
+      return rawLines.filter { !$0.isEmpty }
+    } catch {
+      throw AppError.transcriptReadFailed()
+    }
   }
 }

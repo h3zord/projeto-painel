@@ -21,7 +21,7 @@ down:
 
 hooks:
 	git config core.hooksPath scripts/hooks
-	chmod +x scripts/hooks/pre-push scripts/check-gates scripts/gates/test scripts/check-swift scripts/swift-gates/test scripts/check-docs scripts/smoke-app scripts/run-mutation
+	chmod +x scripts/hooks/pre-push scripts/check-gates scripts/gates/test scripts/check-swift scripts/swift-gates/test scripts/check-docs scripts/run-gitleaks scripts/gitleaks-gates/test scripts/smoke-app scripts/run-mutation
 
 format:
 	xcrun swift-format format --in-place --configuration .swift-format --recursive BrainPanel BrainPanelTests
@@ -62,15 +62,14 @@ ci-portable:
 	trap cleanup EXIT; \
 	trap 'exit 130' INT; \
 	trap 'exit 143' TERM; \
-	mkdir -p "$$run_dir/scan"; \
+	mkdir -p "$$run_dir"; \
 	sh scripts/check-gates; \
 	sh scripts/gates/test; \
 	python3 scripts/check-swift; \
 	sh scripts/swift-gates/test; \
 	python3 scripts/check-docs; \
-	docker run --rm -v "$$(pwd):/repo:ro" -w /repo $(GITLEAKS_IMAGE) git --no-banner /repo; \
-	git ls-files -z --cached --others --exclude-standard | tar --null -T - -cf - | tar -xf - -C "$$run_dir/scan"; \
-	docker run --rm -v "$$(pwd)/$$run_dir/scan:/scan:ro" -w /scan $(GITLEAKS_IMAGE) dir --no-banner /scan
+	python3 scripts/gitleaks-gates/test; \
+	python3 scripts/run-gitleaks --image $(GITLEAKS_IMAGE) "$$run_dir/gitleaks"
 
 check: ci-portable
 	@set -eu; \

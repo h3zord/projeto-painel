@@ -12,15 +12,30 @@ enum BrainPanelBootstrap {
   static func main() {
     let clock = SystemClock()
     let logger = StructuredLogger(clock: clock)
+    let config = requireValidatedConfig(logger: logger)
+
+    if config.mode == .selfCheck {
+      runSelfCheck(config: config, clock: clock, logger: logger)
+      return
+    }
+    BrainPanelRuntime.config = config
+    BrainPanelApp.main()
+  }
+
+  nonisolated static func resolveConfigOrReportFailure(
+    preloaded: AppConfig? = nil,
+    environmentLoader: () throws -> AppConfig = {
+      try AppConfig.loadFromProcessEnvironment()
+    },
+    logger: StructuredLogger,
+    exitHandler: (Int32) -> Void = { Darwin.exit($0) }
+  ) -> AppConfig? {
+    if let preloaded {
+      return preloaded
+    }
 
     do {
-      let config = try AppConfig.loadFromProcessEnvironment()
-      if config.mode == .selfCheck {
-        runSelfCheck(config: config, clock: clock, logger: logger)
-        return
-      }
-      BrainPanelRuntime.config = config
-      BrainPanelApp.main()
+      return try environmentLoader()
     } catch {
       let appError = ErrorHandler.normalize(error)
       var fields: [LogFieldKey: String] = [.status: "boot_failed"]
@@ -33,8 +48,19 @@ enum BrainPanelBootstrap {
         errorCode: appError.code,
         fields: fields
       )
-      Darwin.exit(EXIT_FAILURE)
+      exitHandler(EXIT_FAILURE)
+      return nil
     }
+  }
+
+  static func requireValidatedConfig(
+    preloaded: AppConfig? = nil,
+    logger: StructuredLogger
+  ) -> AppConfig {
+    if let config = resolveConfigOrReportFailure(preloaded: preloaded, logger: logger) {
+      return config
+    }
+    Darwin.exit(EXIT_FAILURE)
   }
 
   private static func runSelfCheck(
@@ -71,25 +97,13 @@ struct BrainPanelApp: App {
   init() {
     let clock = SystemClock()
     let logger = StructuredLogger(clock: clock)
-    if let preloaded = BrainPanelRuntime.config {
-      _usageStore = State(
-        initialValue: UsageStore.makeForRuntime(config: preloaded, clock: clock, logger: logger)
-      )
-    } else if let loaded = try? AppConfig.loadFromProcessEnvironment() {
-      _usageStore = State(
-        initialValue: UsageStore.makeForRuntime(config: loaded, clock: clock, logger: logger)
-      )
-    } else {
-      _usageStore = State(
-        initialValue: UsageStore(
-          collectors: [],
-          conversationCollector: nil,
-          clock: clock,
-          logger: logger,
-          startPeriodicRefresh: false
-        )
-      )
-    }
+    let config = BrainPanelBootstrap.requireValidatedConfig(
+      preloaded: BrainPanelRuntime.config,
+      logger: logger
+    )
+    _usageStore = State(
+      initialValue: UsageStore.makeForRuntime(config: config, clock: clock, logger: logger)
+    )
   }
 
   var body: some Scene {
