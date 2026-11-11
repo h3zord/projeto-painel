@@ -86,7 +86,7 @@ final class SecurityCanaryTests: XCTestCase {
         .utf8
     )
     let flexogravPending = Data(
-      #"{"name":"flexograv-lead","project":"flexograv","transcript":"/Users/exemplo/flexograv/t.jsonl","at":1762819100,"text":"\#(canaryToken) \#(canaryDocument)"}"#
+      #"{"name":"flexograv-lead","project":"flexograv-\#(canaryToken)","transcript":"/Users/exemplo/flexograv/t.jsonl","at":1762819100,"text":"http://127.0.0.1:4780/flexograv/doc-\#(canaryToken) \#(canaryDocument)"}"#
         .utf8
     )
     let waitingState = BrainWaitingEvaluator.evaluate(
@@ -100,8 +100,31 @@ final class SecurityCanaryTests: XCTestCase {
       now: clock.now()
     )
     XCTAssertEqual(waitingState.pendingPrompts.count, 1)
+    XCTAssertNil(waitingState.pendingPrompts.first?.project)
     XCTAssertNil(waitingState.pendingPrompts.first?.text)
     assertNoCanary(in: String(describing: waitingState))
+    if let firstPrompt = waitingState.pendingPrompts.first,
+      let resolvedURL = BrainPagesNavigator.resolveDestination(
+        for: firstPrompt,
+        baseURL: AppConfig.defaultBrainPagesURL
+      )
+    {
+      assertNoCanary(in: resolvedURL.absoluteString)
+    }
+    let directCanaryCorporatePrompt = PendingPrompt(
+      sessionKey: "flexograv-lead",
+      project: "flexograv-\(canaryToken)",
+      askedAt: clock.now(),
+      text: "http://127.0.0.1:4780/flexograv/doc-\(canaryToken)",
+      isExplicit: true,
+      hasButton: false
+    )
+    if let resolvedDirect = BrainPagesNavigator.resolveDestination(
+      for: directCanaryCorporatePrompt,
+      baseURL: AppConfig.defaultBrainPagesURL
+    ) {
+      assertNoCanary(in: resolvedDirect.absoluteString)
+    }
 
     let flexogravTicket = Data(
       #"{"pid":99,"project":"flexograv-erp","role":"dev","cmd":"\#(canaryToken)","commit":"\#(canaryDocument)","queued":1762819100,"started":1762819110,"folder":"/Documents/flexograv"}"#

@@ -53,7 +53,7 @@ struct BrainTabView: View {
         Spacer(minLength: 4)
 
         Button {
-          openBrainPages()
+          dispatchURL(brainPagesURL)
         } label: {
           HStack(spacing: 4) {
             Image(systemName: "globe")
@@ -82,10 +82,34 @@ struct BrainTabView: View {
       ScrollView(.vertical, showsIndicators: true) {
         TimelineView(.periodic(from: referenceDate, by: 60)) { context in
           VStack(spacing: 8.5) {
-            BrainWaitingCardView(state: snapshot.waiting, now: context.date)
-            BrainCIQueueCardView(state: snapshot.ciQueue, now: context.date)
-            BrainHealthCardView(state: snapshot.healthAndBackup, now: context.date)
-            BrainScheduledJobsCardView(state: snapshot.scheduledJobs, now: context.date)
+            BrainWaitingCardView(
+              state: snapshot.waiting,
+              now: context.date,
+              brainPagesURL: brainPagesURL,
+              canOpenPages: canOpenPages,
+              openURLAction: dispatchURL
+            )
+            BrainCIQueueCardView(
+              state: snapshot.ciQueue,
+              now: context.date,
+              brainPagesURL: brainPagesURL,
+              canOpenPages: canOpenPages,
+              openURLAction: dispatchURL
+            )
+            BrainHealthCardView(
+              state: snapshot.healthAndBackup,
+              now: context.date,
+              brainPagesURL: brainPagesURL,
+              canOpenPages: canOpenPages,
+              openURLAction: dispatchURL
+            )
+            BrainScheduledJobsCardView(
+              state: snapshot.scheduledJobs,
+              now: context.date,
+              brainPagesURL: brainPagesURL,
+              canOpenPages: canOpenPages,
+              openURLAction: dispatchURL
+            )
           }
           .padding(.trailing, 2)
         }
@@ -94,15 +118,27 @@ struct BrainTabView: View {
     }
   }
 
-  private func openBrainPages() {
+  private func dispatchURL(_ targetURL: URL) {
     let customOpener = openPagesAction
-    _ = Self.openIfLoopbackSafe(brainPagesURL) { validatedURL in
+    _ = Self.dispatchIfBaseAndTargetSafe(targetURL: targetURL, baseURL: brainPagesURL) {
+      validatedURL in
       if let customOpener {
         customOpener(validatedURL)
       } else {
         NSWorkspace.shared.open(validatedURL)
       }
     }
+  }
+
+  nonisolated static func dispatchIfBaseAndTargetSafe(
+    targetURL: URL?,
+    baseURL: URL,
+    using opener: (URL) -> Void
+  ) -> Bool {
+    guard AppConfig.isSafeLoopbackPagesURL(baseURL), let targetURL else {
+      return false
+    }
+    return openIfLoopbackSafe(targetURL, using: opener)
   }
 
   nonisolated static func openIfLoopbackSafe(

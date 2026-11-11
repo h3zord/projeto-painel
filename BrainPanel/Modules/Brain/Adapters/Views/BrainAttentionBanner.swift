@@ -118,6 +118,60 @@ struct BrainSectionBadge: View {
   }
 }
 
+struct BrainHeaderLinkSpec: Identifiable {
+  var id: String { title }
+  let title: String
+  let destinationURL: URL?
+  let isEnabled: Bool
+  let accessibilityLabel: String
+  let action: (URL) -> Void
+}
+
+struct BrainInlineLinkButton: View {
+  let spec: BrainHeaderLinkSpec
+
+  private var effectiveDestination: URL? {
+    guard spec.isEnabled, let destinationURL = spec.destinationURL else { return nil }
+    return destinationURL
+  }
+
+  var body: some View {
+    Button {
+      if let effectiveDestination {
+        spec.action(effectiveDestination)
+      }
+    } label: {
+      HStack(spacing: 2.5) {
+        Text(spec.title)
+          .font(.system(size: 9.5, weight: .semibold))
+        Image(systemName: "arrow.up.right")
+          .font(.system(size: 7.5, weight: .bold))
+      }
+      .foregroundStyle(effectiveDestination != nil ? Color.blue : Color.secondary.opacity(0.45))
+      .padding(.horizontal, 5.5)
+      .padding(.vertical, 2)
+      .background(
+        (effectiveDestination != nil ? Color.blue.opacity(0.11) : Color.primary.opacity(0.05)),
+        in: Capsule()
+      )
+      .overlay {
+        Capsule()
+          .stroke(
+            effectiveDestination != nil ? Color.blue.opacity(0.22) : Color.primary.opacity(0.08),
+            lineWidth: 0.5
+          )
+      }
+    }
+    .buttonStyle(.plain)
+    .disabled(effectiveDestination == nil)
+    .help(effectiveDestination?.absoluteString ?? "URL loopback indisponível")
+    .accessibilityLabel(spec.accessibilityLabel)
+    .accessibilityHint(
+      effectiveDestination.map { "Abre \($0.absoluteString) no navegador" } ?? ""
+    )
+  }
+}
+
 struct BrainSectionCard<Content: View>: View {
   let title: String
   let iconName: String
@@ -125,29 +179,40 @@ struct BrainSectionCard<Content: View>: View {
   let badgeText: String
   let badgeTone: BrainCardTone
   let cardTone: BrainCardTone
+  var headerLinks: [BrainHeaderLinkSpec] = []
   @ViewBuilder let content: () -> Content
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
-      HStack(spacing: 6) {
-        Image(systemName: iconName)
-          .font(.system(size: 10, weight: .semibold))
-          .foregroundStyle(iconTone == .neutral ? Color.secondary : iconTone.color)
-          .frame(width: 19, height: 19)
-          .background(
-            (iconTone == .neutral ? Color.primary.opacity(0.08) : iconTone.color.opacity(0.14)),
-            in: RoundedRectangle(cornerRadius: 4.5)
-          )
+      HStack(spacing: 5) {
+        HStack(spacing: 6) {
+          Image(systemName: iconName)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(iconTone == .neutral ? Color.secondary : iconTone.color)
+            .frame(width: 19, height: 19)
+            .background(
+              (iconTone == .neutral ? Color.primary.opacity(0.08) : iconTone.color.opacity(0.14)),
+              in: RoundedRectangle(cornerRadius: 4.5)
+            )
 
-        Text(title)
-          .font(.caption.weight(.semibold))
-          .lineLimit(1)
+          Text(title)
+            .font(.caption.weight(.semibold))
+            .lineLimit(1)
 
-        Spacer(minLength: 4)
+          Spacer(minLength: 4)
 
-        BrainSectionBadge(text: badgeText, tone: badgeTone)
+          BrainSectionBadge(text: badgeText, tone: badgeTone)
+        }
+        .accessibilityElement(children: .combine)
+
+        if !headerLinks.isEmpty {
+          HStack(spacing: 4) {
+            ForEach(headerLinks) { linkSpec in
+              BrainInlineLinkButton(spec: linkSpec)
+            }
+          }
+        }
       }
-      .accessibilityElement(children: .combine)
 
       content()
     }

@@ -17,8 +17,8 @@ O aplicativo reutiliza as sessões já autenticadas nas ferramentas de linha de 
   - Resumo rápido das conversas ativas do Claude Code e do Antigravity.
 - **Aba Sessões**
   - Lista de conversas do Claude Code (processo vivo via `kill -0`, janela real em `~/.cache/claude-context/<id>.json` ou janela presumida de `1.0M`) e do Antigravity (`agy`, janela `1_048_576` e nomes do `brain-sessions`), lendo até os últimos 4 MB de cada transcript `.jsonl` para calcular a ocupação percentual do contexto, detectar compactações automáticas (`compact_boundary` / `CHECKPOINT`), sinalizar os limiares do Brain em **70%** (atenção) e **80%** (compactar no próximo ponto natural) e preservar a última lista válida com aviso de diagnóstico caso uma leitura falhe.
-- **Aba Brain (ecossistema nativo com falha parcial isolada e atalho `brain-pages`)**
-  - Quatro cartões nativos em `BrainPanel/Modules/Brain/Adapters/Views/` alimentados por coleta local em `BrainPanel/Modules/Brain/` (`Esperando Você & Correio`, `Fila da Máquina (brain-ci)`, `Saúde & Backup` e `Jobs Agendados`), suprimindo dados corporativos (`flexograv`), sem decodificar corpos de mensagens entre sessões (`brain-mail`), isolando falhas por seção e oferecendo atalho de 1 clique validado em loopback para o `brain-pages`.
+- **Aba Brain (ecossistema nativo com falha parcial isolada e atalhos `brain-pages`)**
+  - Quatro cartões nativos em `BrainPanel/Modules/Brain/Adapters/Views/` alimentados por coleta local em `BrainPanel/Modules/Brain/` (`Esperando Você & Correio`, `Fila da Máquina (brain-ci)`, `Saúde & Backup` e `Jobs Agendados`), suprimindo dados corporativos (`flexograv`), sem decodificar corpos de mensagens entre sessões (`brain-mail`), isolando falhas por seção e oferecendo navegação de 1 clique validada em loopback para páginas explícitas de pendências (`/<escopo>/<pagina>` e `/<escopo>/_arquivo/<pagina>`), projetos (`/#projetos`), espera (`/#esperando`), fila (`/fila`), backup (`/brain/backup-drive`), saúde (`/#saude`) e jobs agendados (`/#agendados`) no `brain-pages`.
 
 ---
 

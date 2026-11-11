@@ -3,6 +3,9 @@ import SwiftUI
 struct BrainCIQueueCardView: View {
   let state: BrainSectionState<CIQueueState>
   let now: Date
+  let brainPagesURL: URL
+  let canOpenPages: Bool
+  let openURLAction: (URL) -> Void
 
   private var badgeInfo: (text: String, tone: BrainCardTone) {
     switch state {
@@ -56,7 +59,16 @@ struct BrainCIQueueCardView: View {
       iconTone: cardTone == .neutral ? .active : cardTone,
       badgeText: badgeInfo.text,
       badgeTone: badgeInfo.tone,
-      cardTone: cardTone
+      cardTone: cardTone,
+      headerLinks: [
+        BrainHeaderLinkSpec(
+          title: "Fila",
+          destinationURL: BrainPagesNavigator.resolveSection(.ciQueue, baseURL: brainPagesURL),
+          isEnabled: canOpenPages,
+          accessibilityLabel: "Abrir página da fila brain-ci no brain-pages",
+          action: openURLAction
+        )
+      ]
     ) {
       switch state {
       case .failed(let appError):

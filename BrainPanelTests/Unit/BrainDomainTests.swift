@@ -70,8 +70,9 @@ final class BrainDomainTests: XCTestCase {
     )
 
     // Agrupou painel-lead mantendo o maior `at` (1762818600), descartou expired-question (> 7 dias)
-    // e suprimiu `text` de flexograv-lead.
+    // e suprimiu `project` e `text` de flexograv-lead.
     XCTAssertEqual(state.pendingPrompts.map(\.sessionKey), ["painel-lead", "flexograv-lead"])
+    XCTAssertEqual(state.pendingPrompts[0].project, "projeto-painel")
     XCTAssertEqual(state.pendingPrompts[0].text, "Escolha a estratégia da Etapa 3")
     XCTAssertEqual(
       state.pendingPrompts[0].askedAt,
@@ -79,6 +80,7 @@ final class BrainDomainTests: XCTestCase {
     )
     XCTAssertTrue(state.pendingPrompts[0].hasButton)
     XCTAssertEqual(state.pendingPrompts[0].elapsedSummary(now: referenceNow), "há 20m")
+    XCTAssertNil(state.pendingPrompts[1].project)
     XCTAssertNil(state.pendingPrompts[1].text)
 
     // painel-lead está aberta há > 1800s -> stuckMail; my-assistant aberta é excluída; caixa-dev fechada -> closedMail
@@ -504,6 +506,264 @@ final class BrainDomainTests: XCTestCase {
     XCTAssertTrue(previewSnapshot.degradedSections.isEmpty)
     XCTAssertEqual(RelativeTimeFormatter.compactDuration(seconds: 42), "42s")
     XCTAssertEqual(RelativeTimeFormatter.compactDuration(seconds: 3_900), "1h 05m")
+  }
+
+  // MARK: - 5. Navegação brain-pages (BrainPagesNavigator)
+
+  func testBrainPagesNavigatorResolvesExplicitPendingPromptLinksAndRewritesOrigin() throws {
+    let baseURL = try XCTUnwrap(URL(string: "http://127.0.0.1:4780/"))
+
+    let directPagePrompt = PendingPrompt(
+      sessionKey: "painel-lead",
+      project: "projeto-painel",
+      askedAt: referenceNow,
+      text: "Revise o plano em http://127.0.0.1:4780/projeto-painel/plano-estrategico.",
+      isExplicit: true,
+      hasButton: true
+    )
+    XCTAssertEqual(
+      BrainPagesNavigator.resolveDestination(for: directPagePrompt, baseURL: baseURL)?
+        .absoluteString,
+      "http://127.0.0.1:4780/projeto-painel/plano-estrategico"
+    )
+
+    let archivedPagePrompt = PendingPrompt(
+      sessionKey: "painel-lead",
+      project: "projeto-painel",
+      askedAt: referenceNow,
+      text: "Arquivo (http://127.0.0.1:4780/projeto-painel/_arquivo/doc-1.v2#secao_2-a)",
+      isExplicit: true,
+      hasButton: false
+    )
+    XCTAssertEqual(
+      BrainPagesNavigator.resolveDestination(for: archivedPagePrompt, baseURL: baseURL)?
+        .absoluteString,
+      "http://127.0.0.1:4780/projeto-painel/_arquivo/doc-1.v2#secao_2-a"
+    )
+
+    let customPortPrompt = PendingPrompt(
+      sessionKey: "caixa-lead",
+      project: "projeto-caixa",
+      askedAt: referenceNow,
+      text: "Confira http://localhost:9999/projeto-caixa/checklist-12#etapa-5 antes de responder",
+      isExplicit: true,
+      hasButton: true
+    )
+    XCTAssertEqual(
+      BrainPagesNavigator.resolveDestination(for: customPortPrompt, baseURL: baseURL)?
+        .absoluteString,
+      "http://127.0.0.1:4780/projeto-caixa/checklist-12#etapa-5"
+    )
+
+    let maxLenPage = "a" + String(repeating: "b", count: 80)
+    let mixedLinksPrompt = PendingPrompt(
+      sessionKey: "painel-lead",
+      project: "projeto-painel",
+      askedAt: referenceNow,
+      text:
+        "Issue https://github.com/h3zord/projeto-painel/issues/14 e http://127.0.0.1:4780/projeto-painel/\(maxLenPage)",
+      isExplicit: true,
+      hasButton: false
+    )
+    XCTAssertEqual(
+      BrainPagesNavigator.resolveDestination(for: mixedLinksPrompt, baseURL: baseURL)?
+        .absoluteString,
+      "http://127.0.0.1:4780/projeto-painel/\(maxLenPage)"
+    )
+  }
+
+  func testBrainPagesNavigatorFallbacksAndRejectsInvalidOrCorporatePendingPromptTargets() throws {
+    let baseURL = try XCTUnwrap(URL(string: "http://127.0.0.1:4780/"))
+
+    let projectFallbackPrompt = PendingPrompt(
+      sessionKey: "painel-lead",
+      project: "projeto-painel",
+      askedAt: referenceNow,
+      text: "Escolha a abordagem 1 ou 2",
+      isExplicit: true,
+      hasButton: true
+    )
+    XCTAssertEqual(
+      BrainPagesNavigator.resolveDestination(for: projectFallbackPrompt, baseURL: baseURL)?
+        .absoluteString,
+      "http://127.0.0.1:4780/#projetos"
+    )
+
+    // GET /<escopo> sozinho retorna 404 no brain-pages: nunca aceita 1 segmento nem presume checklist-1
+    let singleSegmentPrompt = PendingPrompt(
+      sessionKey: "painel-lead",
+      project: "projeto-painel",
+      askedAt: referenceNow,
+      text: "Abrir http://127.0.0.1:4780/projeto-painel",
+      isExplicit: true,
+      hasButton: false
+    )
+    XCTAssertEqual(
+      BrainPagesNavigator.resolveDestination(for: singleSegmentPrompt, baseURL: baseURL)?
+        .absoluteString,
+      "http://127.0.0.1:4780/#projetos"
+    )
+
+    let waitingFallbackPrompt = PendingPrompt(
+      sessionKey: "my-assistant",
+      project: nil,
+      askedAt: referenceNow,
+      text: "Confirmar limpeza semanal?",
+      isExplicit: true,
+      hasButton: false
+    )
+    XCTAssertEqual(
+      BrainPagesNavigator.resolveDestination(for: waitingFallbackPrompt, baseURL: baseURL)?
+        .absoluteString,
+      "http://127.0.0.1:4780/#esperando"
+    )
+
+    let invalidProjectSlugPrompt = PendingPrompt(
+      sessionKey: "s1",
+      project: "Projeto_Invalido",
+      askedAt: referenceNow,
+      text: nil,
+      isExplicit: false,
+      hasButton: false
+    )
+    XCTAssertEqual(
+      BrainPagesNavigator.resolveDestination(for: invalidProjectSlugPrompt, baseURL: baseURL)?
+        .absoluteString,
+      "http://127.0.0.1:4780/#esperando"
+    )
+
+    let tooLongSegment = "a" + String(repeating: "b", count: 81)
+    let rejectedTexts = [
+      "https://evil.example/projeto-painel/doc-1",
+      "http://evil.example/projeto-painel/doc-1",
+      "http://192.168.1.20:4780/projeto-painel/doc-1",
+      "http://user:pass@127.0.0.1:4780/projeto-painel/doc-1",
+      "http://127.0.0.1:4780/projeto-painel/doc-1?token=1",
+      "http://127.0.0.1:4780/../secreto",
+      "http://127.0.0.1:4780/projeto-painel/..",
+      "http://127.0.0.1:4780/projeto-painel/doc..1",
+      "http://127.0.0.1:4780/%2e%2e/doc-1",
+      "http://127.0.0.1:4780/ProjetoPainel/doc-1",
+      "http://127.0.0.1:4780/projeto_painel/doc-1",
+      "http://127.0.0.1:4780/projeto-painel/_outro/doc-1",
+      "http://127.0.0.1:4780/.oculto/doc-1",
+      "http://127.0.0.1:4780/-traco/doc-1",
+      "http://127.0.0.1:4780/projeto-painel/\(tooLongSegment)",
+      "http://127.0.0.1:4780/projeto-painel/doc-1#invalido/com/barra",
+      "http://127.0.0.1:4780/projeto-painel/doc-1#",
+    ]
+
+    for rejectedText in rejectedTexts {
+      let prompt = PendingPrompt(
+        sessionKey: "s1",
+        project: nil,
+        askedAt: referenceNow,
+        text: rejectedText,
+        isExplicit: true,
+        hasButton: false
+      )
+      XCTAssertEqual(
+        BrainPagesNavigator.resolveDestination(for: prompt, baseURL: baseURL)?.absoluteString,
+        "http://127.0.0.1:4780/#esperando",
+        "Deveria ter recusado URL explícita inválida: \(rejectedText)"
+      )
+    }
+
+    // Bloqueio estrito de escopo e links corporativos (flexograv)
+    let corporatePrompt = PendingPrompt(
+      sessionKey: "flexograv-lead",
+      project: "flexograv-erp",
+      askedAt: referenceNow,
+      text: "Veja http://127.0.0.1:4780/flexograv-erp/plano-1",
+      isExplicit: true,
+      hasButton: false
+    )
+    let resolvedCorporate = BrainPagesNavigator.resolveDestination(
+      for: corporatePrompt,
+      baseURL: baseURL
+    )
+    XCTAssertEqual(resolvedCorporate?.absoluteString, "http://127.0.0.1:4780/#esperando")
+    XCTAssertFalse(resolvedCorporate?.absoluteString.contains("flexograv") ?? true)
+
+    let corporateLinkInOtherPrompt = PendingPrompt(
+      sessionKey: "painel-lead",
+      project: "projeto-painel",
+      askedAt: referenceNow,
+      text: "Veja http://127.0.0.1:4780/flexograv/doc-1",
+      isExplicit: true,
+      hasButton: false
+    )
+    let resolvedMixedCorporate = BrainPagesNavigator.resolveDestination(
+      for: corporateLinkInOtherPrompt,
+      baseURL: baseURL
+    )
+    XCTAssertFalse(resolvedMixedCorporate?.absoluteString.contains("flexograv") ?? true)
+    XCTAssertEqual(resolvedMixedCorporate?.absoluteString, "http://127.0.0.1:4780/#projetos")
+
+    let corporateProseWithCleanLink = PendingPrompt(
+      sessionKey: "painel-lead",
+      project: "projeto-painel",
+      askedAt: referenceNow,
+      text: "Contexto flexograv confidencial em http://127.0.0.1:4780/projeto-painel/doc-1",
+      isExplicit: true,
+      hasButton: false
+    )
+    XCTAssertEqual(
+      BrainPagesNavigator.resolveDestination(for: corporateProseWithCleanLink, baseURL: baseURL)?
+        .absoluteString,
+      "http://127.0.0.1:4780/#projetos"
+    )
+  }
+
+  func testBrainPagesNavigatorResolvesStuckMailboxAndOperationalSectionsRejectingUnsafeBaseURL()
+    throws
+  {
+    let customBaseURL = try XCTUnwrap(URL(string: "http://localhost:4880/"))
+    let mailbox = StuckMailbox(
+      recipient: "painel-lead",
+      unreadCount: 1,
+      oldestMessageAt: referenceNow.addingTimeInterval(-2_000),
+      senders: ["painel-dev"]
+    )
+
+    let mailboxURL = try XCTUnwrap(
+      BrainPagesNavigator.resolveDestination(for: mailbox, baseURL: customBaseURL)
+    )
+    let queueURL = try XCTUnwrap(
+      BrainPagesNavigator.resolveSection(.ciQueue, baseURL: customBaseURL)
+    )
+    let backupURL = try XCTUnwrap(
+      BrainPagesNavigator.resolveSection(.backupDrive, baseURL: customBaseURL)
+    )
+    let healthURL = try XCTUnwrap(
+      BrainPagesNavigator.resolveSection(.health, baseURL: customBaseURL)
+    )
+    let scheduledURL = try XCTUnwrap(
+      BrainPagesNavigator.resolveSection(.scheduledJobs, baseURL: customBaseURL)
+    )
+
+    XCTAssertEqual(mailboxURL.absoluteString, "http://localhost:4880/#esperando")
+    XCTAssertEqual(queueURL.absoluteString, "http://localhost:4880/fila")
+    XCTAssertEqual(backupURL.absoluteString, "http://localhost:4880/brain/backup-drive")
+    XCTAssertEqual(healthURL.absoluteString, "http://localhost:4880/#saude")
+    XCTAssertEqual(scheduledURL.absoluteString, "http://localhost:4880/#agendados")
+
+    for resolvedURL in [mailboxURL, queueURL, backupURL, healthURL, scheduledURL] {
+      var dispatched: URL?
+      XCTAssertTrue(BrainTabView.openIfLoopbackSafe(resolvedURL) { dispatched = $0 })
+      XCTAssertEqual(dispatched, resolvedURL)
+    }
+
+    let unsafeBases = [
+      try XCTUnwrap(URL(string: "https://evil.example/")),
+      try XCTUnwrap(URL(string: "http://192.168.0.10:4780/")),
+      try XCTUnwrap(URL(string: "http://127.0.0.1:4780/../escape")),
+    ]
+    for unsafeBase in unsafeBases {
+      XCTAssertNil(BrainPagesNavigator.resolveDestination(for: mailbox, baseURL: unsafeBase))
+      XCTAssertNil(BrainPagesNavigator.resolveSection(.ciQueue, baseURL: unsafeBase))
+      XCTAssertNil(BrainPagesNavigator.resolveSection(.backupDrive, baseURL: unsafeBase))
+    }
   }
 
   private func loadFixtureOpenSessionNames(root: URL, livePIDs: Set<Int32>) throws -> Set<String> {

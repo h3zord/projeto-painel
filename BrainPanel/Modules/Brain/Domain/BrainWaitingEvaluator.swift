@@ -124,11 +124,14 @@ nonisolated enum BrainWaitingEvaluator {
         record.name,
         sessionKey
       )
+      let safeProject =
+        isCorporate ? nil : BrainPrivacyGuard.sanitizeSingleLine(record.project, maxLength: 120)
       let safeText =
         isCorporate ? nil : BrainPrivacyGuard.sanitizeSingleLine(record.text, maxLength: 400)
 
       let prompt = PendingPrompt(
         sessionKey: sessionKey,
+        project: safeProject,
         askedAt: Date(timeIntervalSince1970: askedEpoch),
         text: safeText,
         isExplicit: record.explicit ?? false,
