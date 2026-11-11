@@ -590,6 +590,169 @@ final class UsageStoreTests: XCTestCase {
     let maxInFlight = await gate.maxConcurrentParticipants
     XCTAssertEqual(maxInFlight, 2)
   }
+
+  func testRefreshAndRefreshLocalStateDispatchDiscreteAlertsOnceAndIsolateNonLiveRuntimeModes()
+    async throws
+  {
+    let clock = TestClock()
+    let spyDeliverer = SpyNotificationDeliverer()
+
+    let criticalClaude = ProviderUsage(
+      id: "claude",
+      name: "Claude",
+      plan: "Max",
+      icon: .asset("ClaudeIcon"),
+      tint: .orange,
+      sessionState: .active,
+      limits: [
+        UsageLimit(
+          id: "claude-session",
+          name: "Sessão de 5 horas",
+          detail: nil,
+          window: .session,
+          usedPercentage: 88,
+          resetsAt: nil
+        )
+      ]
+    )
+    let waitingSnapshot = BrainSnapshot(
+      waiting: .loaded(
+        WaitingState(
+          pendingPrompts: [
+            PendingPrompt(
+              sessionKey: "painel-lead",
+              askedAt: clock.now().addingTimeInterval(-60),
+              text: "Pergunta",
+              isExplicit: true,
+              hasButton: true
+            )
+          ],
+          stuckMail: [],
+          closedMail: []
+        )
+      ),
+      ciQueue: .loaded(.empty),
+      healthAndBackup: .loaded(.empty),
+      scheduledJobs: .loaded(.empty),
+      capturedAt: clock.now()
+    )
+    let doctorFailAndResolvedWaitingSnapshot = BrainSnapshot(
+      waiting: .loaded(.empty),
+      ciQueue: .loaded(.empty),
+      healthAndBackup: .loaded(
+        HealthAndBackupState(
+          doctorFailures: [
+            DoctorFinding(key: "FAIL 7", severity: .fail, message: "erro doctor")
+          ],
+          doctorWarnings: [],
+          doctorCheckedAt: clock.now(),
+          testSuite: nil,
+          syncStatus: nil,
+          backupStatus: nil,
+          liveBackupProgress: nil
+        )
+      ),
+      scheduledJobs: .loaded(.empty),
+      capturedAt: clock.now()
+    )
+
+    let claudeCollector = StubUsageCollector(
+      providerID: "claude",
+      results: [.success(criticalClaude)]
+    )
+    let brainCollector = StubBrainStateCollector(
+      results: [
+        .success(waitingSnapshot),
+        .success(doctorFailAndResolvedWaitingSnapshot),
+        .success(waitingSnapshot),
+      ]
+    )
+
+    let store = UsageStore(
+      collectors: [claudeCollector],
+      conversationCollector: nil,
+      brainCollector: brainCollector,
+      notificationDeliverer: spyDeliverer,
+      notificationCooldownSeconds: 3_600,
+      clock: clock,
+      startPeriodicRefresh: false
+    )
+
+    // 1. refresh() completo entrega 1 único lote combinando cota + Brain (sem duplicar no passo local interno)
+    await store.refresh()
+    XCTAssertEqual(spyDeliverer.callCount, 1)
+    XCTAssertEqual(
+      spyDeliverer.batches[0].alerts.map(\.incidentKey),
+      ["quota:claude:claude-session", "waiting:prompt:painel-lead"]
+    )
+
+    // 2. refreshLocalState() após 30s: cota continua em cooldown; waiting foi resolvido; doctor FAIL novo dispara
+    clock.advance(by: 30)
+    await store.refreshLocalState()
+    XCTAssertEqual(spyDeliverer.callCount, 2)
+    XCTAssertEqual(
+      spyDeliverer.batches[1].alerts.map(\.incidentKey),
+      ["health:doctor_failure"]
+    )
+
+    // 3. refreshLocalState() após mais 30s: waiting voltou após ter sido resolvido -> rearme imediato!
+    clock.advance(by: 30)
+    await store.refreshLocalState()
+    XCTAssertEqual(spyDeliverer.callCount, 3)
+    XCTAssertEqual(
+      spyDeliverer.batches[2].alerts.map(\.incidentKey),
+      ["waiting:prompt:painel-lead"]
+    )
+
+    // 4. Isolamento de modos fora de .live em UsageStore.makeForRuntime / shouldUseLiveNotifications
+    let homeURL = URL(filePath: "/Users/teste", directoryHint: .isDirectory)
+    let supportURL = URL(
+      filePath: "/Users/teste/Library/Application Support",
+      directoryHint: .isDirectory
+    )
+    let tempURL = FileManager.default.temporaryDirectory.appending(
+      path: "brain-panel-store-mode-test-\(UUID().uuidString)",
+      directoryHint: .isDirectory
+    )
+    defer { try? FileManager.default.removeItem(at: tempURL) }
+
+    let liveEnabled = try AppConfig.parse(
+      environment: ["BRAIN_PANEL_MODE": "live"],
+      defaultHomeDirectory: homeURL,
+      defaultAppSupportRoot: supportURL,
+      defaultTemporaryRoot: tempURL,
+      bundleIdentifier: "com.h3zord.BrainPanel"
+    )
+    let liveDisabled = try AppConfig.parse(
+      environment: [
+        "BRAIN_PANEL_MODE": "live",
+        "BRAIN_PANEL_NOTIFICATIONS_ENABLED": "false",
+      ],
+      defaultHomeDirectory: homeURL,
+      defaultAppSupportRoot: supportURL,
+      defaultTemporaryRoot: tempURL,
+      bundleIdentifier: "com.h3zord.BrainPanel"
+    )
+    XCTAssertTrue(UsageStore.shouldUseLiveNotifications(for: liveEnabled))
+    XCTAssertFalse(UsageStore.shouldUseLiveNotifications(for: liveDisabled))
+
+    for nonLiveMode in ["isolated", "self_check", "testing"] {
+      let forcedTrueNonLive = try AppConfig.parse(
+        environment: [
+          "BRAIN_PANEL_MODE": nonLiveMode,
+          "BRAIN_PANEL_NOTIFICATIONS_ENABLED": "true",
+        ],
+        defaultHomeDirectory: homeURL,
+        defaultAppSupportRoot: supportURL,
+        defaultTemporaryRoot: tempURL,
+        bundleIdentifier: "com.h3zord.BrainPanel"
+      )
+      XCTAssertFalse(UsageStore.shouldUseLiveNotifications(for: forcedTrueNonLive))
+      let runtimeStore = UsageStore.makeForRuntime(config: forcedTrueNonLive, clock: clock)
+      runtimeStore.stopPeriodicRefresh()
+      XCTAssertFalse(runtimeStore.hasNotificationDeliverer)
+    }
+  }
 }
 
 private actor ParallelCollectorRendezvousGate {

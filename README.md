@@ -19,6 +19,8 @@ O aplicativo reutiliza as sessões já autenticadas nas ferramentas de linha de 
   - Lista de conversas do Claude Code (processo vivo via `kill -0`, janela real em `~/.cache/claude-context/<id>.json` ou janela presumida de `1.0M`) e do Antigravity (`agy`, janela `1_048_576` e nomes do `brain-sessions`), lendo até os últimos 4 MB de cada transcript `.jsonl` para calcular a ocupação percentual do contexto, detectar compactações automáticas (`compact_boundary` / `CHECKPOINT`), sinalizar os limiares do Brain em **70%** (atenção) e **80%** (compactar no próximo ponto natural) e preservar a última lista válida com aviso de diagnóstico caso uma leitura falhe.
 - **Aba Brain (ecossistema nativo com falha parcial isolada e atalhos `brain-pages`)**
   - Quatro cartões nativos em `BrainPanel/Modules/Brain/Adapters/Views/` alimentados por coleta local em `BrainPanel/Modules/Brain/` (`Esperando Você & Correio`, `Fila da Máquina (brain-ci)`, `Saúde & Backup` e `Jobs Agendados`), suprimindo dados corporativos (`flexograv`), sem decodificar corpos de mensagens entre sessões (`brain-mail`), isolando falhas por seção e oferecendo navegação de 1 clique validada em loopback para páginas explícitas de pendências (`/<escopo>/<pagina>` e `/<escopo>/_arquivo/<pagina>`), projetos (`/#projetos`), espera (`/#esperando`), fila (`/fila`), backup (`/brain/backup-drive`), saúde (`/#saude`) e jobs agendados (`/#agendados`) no `brain-pages`.
+- **Alertas nativos discretos do macOS (`BrainPanel/Modules/Notifications/`)**
+  - Notificações silenciosas na Central de Notificações (`UNUserNotificationCenter`, autorização apenas `.alert`, sem som nem badge no Dock) com cooldown de 1 hora por incidente e rearme automático após resolução para cota utilizável crítica (`< 15%`), sessão ou correio aguardando o dono (com omissão/mascaramento de escopo corporativo `flexograv`) e falhas em `brain-doctor` (`FAIL`) ou `brain-backup` (atrasado, falho ou com progresso ao vivo estagnado).
 
 ---
 
@@ -127,6 +129,7 @@ Toda variável `BRAIN_PANEL_*` é validada de forma estrita na inicialização p
 - `BRAIN_PANEL_REFRESH_INTERVAL_SECONDS`: intervalo periódico de atualização de cotas (`10` a `3600`, padrão `300`).
 - `BRAIN_PANEL_CACHE_TTL_SECONDS`: tempo máximo de cache ao abrir o painel (`1` a `600`, padrão `60`).
 - `BRAIN_PANEL_BRAIN_PAGES_URL`: URL loopback opcional do painel web local `brain-pages` (`http://127.0.0.1` ou `http://localhost` com porta opcional, padrão `http://127.0.0.1:4780/`).
+- `BRAIN_PANEL_NOTIFICATIONS_ENABLED`: `true` ou `false` (case-sensitive estrito; padrão `true` em `live` e `false` nos demais modos) para habilitar ou desativar os alertas nativos discretos do macOS.
 - `BRAIN_PANEL_CLAUDE_SESSIONS_DIR`, `BRAIN_PANEL_CLAUDE_PROJECTS_DIR`, `BRAIN_PANEL_CLAUDE_CONTEXT_CACHE_DIR`, `BRAIN_PANEL_ANTIGRAVITY_DIR`, `BRAIN_PANEL_BRAIN_STATE_DIR`, `BRAIN_PANEL_BRAIN_SESSIONS_STATE_DIR`, `BRAIN_PANEL_LOGS_DIR`, `BRAIN_PANEL_LAUNCH_AGENTS_DIR`, `BRAIN_PANEL_BACKUP_PROGRESS_FILE`, `BRAIN_PANEL_APP_SUPPORT_DIR`, `BRAIN_PANEL_CLI_SEARCH_PATHS`: caminhos absolutos opcionais usados para isolamento ou customização.
 
 ---

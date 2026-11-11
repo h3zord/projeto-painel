@@ -168,3 +168,33 @@ nonisolated final class StubBrainStateCollector: BrainStateCollecting, @unchecke
     return try next.get()
   }
 }
+
+nonisolated final class SpyNotificationDeliverer: NotificationDelivering, @unchecked Sendable {
+  struct DeliveryBatch: Equatable, Sendable {
+    let refreshID: String
+    let alerts: [DiscreteNotificationAlert]
+  }
+
+  private let lock = NSLock()
+  private var recordedBatches: [DeliveryBatch] = []
+
+  var batches: [DeliveryBatch] {
+    lock.lock()
+    defer { lock.unlock() }
+    return recordedBatches
+  }
+
+  var deliveredAlerts: [DiscreteNotificationAlert] {
+    batches.flatMap(\.alerts)
+  }
+
+  var callCount: Int {
+    batches.count
+  }
+
+  func deliver(_ alerts: [DiscreteNotificationAlert], refreshID: String) async {
+    lock.withLock {
+      recordedBatches.append(DeliveryBatch(refreshID: refreshID, alerts: alerts))
+    }
+  }
+}

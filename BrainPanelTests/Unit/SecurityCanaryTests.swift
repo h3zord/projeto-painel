@@ -22,6 +22,7 @@ final class SecurityCanaryTests: XCTestCase {
           "BRAIN_PANEL_CLAUDE_CONTEXT_CACHE_DIR": canaryToken,
           "BRAIN_PANEL_ANTIGRAVITY_DIR": canaryDocument,
           "BRAIN_PANEL_BRAIN_PAGES_URL": "http://\(canaryToken):4780/\(canaryDocument)",
+          "BRAIN_PANEL_NOTIFICATIONS_ENABLED": canaryToken,
         ],
         defaultHomeDirectory: URL(filePath: "/Users/teste"),
         defaultAppSupportRoot: URL(filePath: "/Users/teste/Library/Application Support"),
@@ -181,20 +182,114 @@ final class SecurityCanaryTests: XCTestCase {
 
     let failingBrainCollector = StubBrainStateCollector(
       results: [
-        .failure(RawExternalFailure(message: "Falha brain \(canaryToken) \(canaryDocument)"))
+        .success(
+          BrainSnapshot(
+            waiting: .loaded(
+              WaitingState(
+                pendingPrompts: [
+                  PendingPrompt(
+                    sessionKey: "flexograv-lead",
+                    project: "flexograv-\(canaryToken)",
+                    askedAt: clock.now(),
+                    text: "Segredo \(canaryToken) \(canaryDocument)",
+                    isExplicit: true,
+                    hasButton: true
+                  ),
+                  PendingPrompt(
+                    sessionKey: "painel-lead",
+                    project: "projeto-painel",
+                    askedAt: clock.now(),
+                    text: "Pergunta com \(canaryToken) \(canaryDocument)",
+                    isExplicit: true,
+                    hasButton: true
+                  ),
+                ],
+                stuckMail: [
+                  StuckMailbox(
+                    recipient: "flexograv-dev",
+                    unreadCount: 1,
+                    oldestMessageAt: clock.now().addingTimeInterval(-3_600),
+                    senders: ["remetente-\(canaryToken)"]
+                  )
+                ],
+                closedMail: []
+              )
+            ),
+            ciQueue: .loaded(.empty),
+            healthAndBackup: .loaded(
+              HealthAndBackupState(
+                doctorFailures: [
+                  DoctorFinding(
+                    key: "FAIL 99",
+                    severity: .fail,
+                    message: "Detalhe sensível \(canaryToken) \(canaryDocument)"
+                  )
+                ],
+                doctorWarnings: [],
+                doctorCheckedAt: clock.now(),
+                testSuite: nil,
+                syncStatus: nil,
+                backupStatus: BackupStatus(
+                  isPassing: false,
+                  isOverdue: true,
+                  reason: "Falha \(canaryToken) \(canaryDocument)",
+                  completedAt: nil,
+                  snapshotID: nil,
+                  addedBytes: nil,
+                  filesCount: nil
+                ),
+                liveBackupProgress: LiveBackupProgress(
+                  phase: "upload",
+                  startedAt: clock.now(),
+                  heartbeatAt: clock.now().addingTimeInterval(-300),
+                  fractionCompleted: 0.2,
+                  processedBytes: 10,
+                  totalBytes: 50,
+                  estimatedRemainingSeconds: nil,
+                  errorCount: 1,
+                  currentFolder: "/Users/privado/\(canaryToken)/\(canaryDocument)",
+                  isStalled: true
+                )
+              )
+            ),
+            scheduledJobs: .loaded(.empty),
+            capturedAt: clock.now()
+          )
+        ),
+        .failure(RawExternalFailure(message: "Falha brain \(canaryToken) \(canaryDocument)")),
       ]
     )
 
+    let spyDeliverer = SpyNotificationDeliverer()
     let store = UsageStore(
       collectors: [failingCollector, succeedingCollector],
       conversationCollector: nil,
       brainCollector: failingBrainCollector,
+      notificationDeliverer: spyDeliverer,
       clock: clock,
       logger: logger,
       startPeriodicRefresh: false
     )
     await store.refresh()
     await store.refresh()
+
+    XCTAssertFalse(spyDeliverer.deliveredAlerts.isEmpty)
+    for alert in spyDeliverer.deliveredAlerts {
+      assertNoCanary(in: alert.identifier)
+      assertNoCanary(in: alert.incidentKey)
+      assertNoCanary(in: alert.title)
+      assertNoCanary(in: alert.body)
+      XCTAssertFalse(alert.identifier.localizedStandardContains("flexograv"))
+      XCTAssertFalse(alert.incidentKey.localizedStandardContains("flexograv"))
+      XCTAssertFalse(alert.title.localizedStandardContains("flexograv"))
+      XCTAssertFalse(alert.body.localizedStandardContains("flexograv"))
+    }
+
+    let canaryBackend = CanaryFailingNotificationBackend(
+      failureMessage: "Notificação falhou \(canaryToken) \(canaryDocument)"
+    )
+    let adapter = UserNotificationCenterAdapter(backend: canaryBackend, logger: logger)
+    await adapter.deliver(spyDeliverer.deliveredAlerts, refreshID: "canary-notify")
 
     for provider in store.providers {
       if let reason = provider.unavailableReason {
@@ -214,5 +309,22 @@ final class SecurityCanaryTests: XCTestCase {
     XCTAssertFalse(text.contains("FAKE-CANARIO"), "Canário vazou em: \(text)", file: file, line: line)
     XCTAssertFalse(text.contains(canaryToken), "Token canário vazou em: \(text)", file: file, line: line)
     XCTAssertFalse(text.contains(canaryDocument), "CPF canário vazou em: \(text)", file: file, line: line)
+  }
+}
+
+private nonisolated struct CanaryFailingNotificationBackend: UserNotificationBackend {
+  struct CanaryBackendError: Error, LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
+  }
+
+  let failureMessage: String
+
+  func requestAlertOnlyAuthorization() async throws -> Bool {
+    true
+  }
+
+  func enqueue(_: SystemNotificationPayload) async throws {
+    throw CanaryBackendError(message: failureMessage)
   }
 }

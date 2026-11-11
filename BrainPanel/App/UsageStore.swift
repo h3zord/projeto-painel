@@ -38,11 +38,14 @@ final class UsageStore {
   private let collectors: [any UsageCollector]
   private let conversationCollector: (any ConversationCollecting)?
   private let brainCollector: (any BrainStateCollecting)?
+  private let notificationDeliverer: (any NotificationDelivering)?
   private let clock: any Clock
   private let logger: StructuredLogger
   private let refreshInterval: Duration
   private let cacheTTL: TimeInterval
   private let refreshTaskHandle = RefreshTaskHandle()
+  private var notificationPolicyEngine: NotificationPolicyEngine
+  private var isBrainSnapshotStale = false
   private var refreshSequence = 0
 
   init(
@@ -52,6 +55,8 @@ final class UsageStore {
     collectors: [any UsageCollector],
     conversationCollector: (any ConversationCollecting)?,
     brainCollector: (any BrainStateCollecting)? = nil,
+    notificationDeliverer: (any NotificationDelivering)? = nil,
+    notificationCooldownSeconds: TimeInterval = NotificationPolicyEngine.defaultCooldownSeconds,
     clock: any Clock = SystemClock(),
     logger: StructuredLogger? = nil,
     refreshInterval: Duration = .seconds(300),
@@ -65,6 +70,10 @@ final class UsageStore {
     self.collectors = collectors
     self.conversationCollector = conversationCollector
     self.brainCollector = brainCollector
+    self.notificationDeliverer = notificationDeliverer
+    self.notificationPolicyEngine = NotificationPolicyEngine(
+      cooldownSeconds: notificationCooldownSeconds
+    )
     self.clock = clock
     self.logger = logger ?? StructuredLogger(clock: clock)
     self.refreshInterval = refreshInterval
@@ -104,6 +113,10 @@ final class UsageStore {
 
   var currentDate: Date {
     clock.now()
+  }
+
+  var hasNotificationDeliverer: Bool {
+    notificationDeliverer != nil
   }
 
   private var lowestRemainingPercentage: Int? {
@@ -195,6 +208,13 @@ final class UsageStore {
 
   @discardableResult
   func refreshLocalState(refreshID: String? = nil) async -> Bool {
+    await performLocalStateRefresh(refreshID: refreshID, evaluateNotifications: true)
+  }
+
+  private func performLocalStateRefresh(
+    refreshID: String?,
+    evaluateNotifications: Bool
+  ) async -> Bool {
     guard conversationCollector != nil || brainCollector != nil else { return false }
     let correlationID = refreshID ?? nextRefreshID(prefix: "local")
 
@@ -241,6 +261,7 @@ final class UsageStore {
       switch resolvedBrain {
       case .success(let snapshot):
         brainSnapshot = snapshot
+        isBrainSnapshotStale = false
         let degraded = snapshot.degradedSections
         if degraded.isEmpty {
           lastBrainUpdated = clock.now()
@@ -273,6 +294,7 @@ final class UsageStore {
           )
         }
       case .failure(let appError):
+        isBrainSnapshotStale = true
         logger.warn(
           event: "brain_state_refresh_failed",
           refreshID: correlationID,
@@ -283,6 +305,10 @@ final class UsageStore {
           ]
         )
       }
+    }
+
+    if evaluateNotifications {
+      await evaluateAndDeliverNotifications(refreshID: correlationID)
     }
 
     return anyLocalSucceeded
@@ -306,9 +332,13 @@ final class UsageStore {
       fields: [.status: "started"]
     )
 
-    let localSucceeded = await refreshLocalState(refreshID: correlationID)
+    let localSucceeded = await performLocalStateRefresh(
+      refreshID: correlationID,
+      evaluateNotifications: false
+    )
 
     guard !collectors.isEmpty else {
+      await evaluateAndDeliverNotifications(refreshID: correlationID)
       logRefreshCompleted(
         correlationID: correlationID,
         startedAt: startedAt,
@@ -379,11 +409,24 @@ final class UsageStore {
     if receivedLiveData {
       lastUpdated = clock.now()
     }
+    await evaluateAndDeliverNotifications(refreshID: correlationID)
     logRefreshCompleted(
       correlationID: correlationID,
       startedAt: startedAt,
       anySucceeded: receivedLiveData
     )
+  }
+
+  private func evaluateAndDeliverNotifications(refreshID: String) async {
+    let input = NotificationSnapshotBridge.makeEvaluationInput(
+      providers: providers,
+      brainSnapshot: brainSnapshot,
+      hasBrainCollector: brainCollector != nil,
+      isBrainSnapshotStale: isBrainSnapshotStale
+    )
+    let alerts = notificationPolicyEngine.evaluate(input: input, now: clock.now())
+    guard !alerts.isEmpty, let notificationDeliverer else { return }
+    await notificationDeliverer.deliver(alerts, refreshID: refreshID)
   }
 
   nonisolated private static func collectConversations(
@@ -431,6 +474,10 @@ final class UsageStore {
 }
 
 extension UsageStore {
+  static func shouldUseLiveNotifications(for config: AppConfig) -> Bool {
+    config.mode == .live && config.notificationsEnabled
+  }
+
   static func makeForRuntime(
     config: AppConfig,
     clock: any Clock = SystemClock(),
@@ -441,6 +488,10 @@ extension UsageStore {
     switch config.mode {
     case .live:
       let cliEnvironment = CLIEnvironment(config: config)
+      let liveDeliverer: (any NotificationDelivering)? =
+        Self.shouldUseLiveNotifications(for: config)
+        ? UserNotificationCenterAdapter(logger: resolvedLogger)
+        : nil
       return UsageStore(
         collectors: [
           ClaudeCollector(cliEnvironment: cliEnvironment, clock: clock),
@@ -448,6 +499,7 @@ extension UsageStore {
         ],
         conversationCollector: ActiveConversationCollector(config: config, clock: clock),
         brainCollector: BrainStateCollector(config: config, clock: clock),
+        notificationDeliverer: liveDeliverer,
         clock: clock,
         logger: resolvedLogger,
         refreshInterval: config.refreshInterval,

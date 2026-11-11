@@ -291,6 +291,41 @@ MUTANTS: list[MutantSpec] = [
         original='!segment.contains(".."),',
         replacement='!segment.contains("__nunca__"),',
     ),
+    MutantSpec(
+        id="M38",
+        relative_file="BrainPanel/Modules/Notifications/Domain/NotificationPolicyEngine.swift",
+        description="fronteira estrita < 15% para alerta de cota crítica em NotificationPolicyEngine",
+        original="where window.remainingPercentage < Self.criticalQuotaRemainingThreshold {",
+        replacement="where window.remainingPercentage <= Self.criticalQuotaRemainingThreshold {",
+    ),
+    MutantSpec(
+        id="M39",
+        relative_file="BrainPanel/Modules/Notifications/Domain/NotificationPolicyEngine.swift",
+        description="fronteira exata de expiração do cooldown em NotificationPolicyEngine",
+        original="now.timeIntervalSince(lastAlertedAt) < cooldownSeconds",
+        replacement="now.timeIntervalSince(lastAlertedAt) <= cooldownSeconds",
+    ),
+    MutantSpec(
+        id="M40",
+        relative_file="BrainPanel/Modules/Notifications/Domain/NotificationPolicyEngine.swift",
+        description="mascaramento de escopo corporativo flexograv nas notificações discretas",
+        original='static let corporateMarker = "flexograv"',
+        replacement='static let corporateMarker = "__nunca_mascara__"',
+    ),
+    MutantSpec(
+        id="M41",
+        relative_file="BrainPanel/Modules/Notifications/Domain/NotificationPolicyEngine.swift",
+        description="disparo de alerta de backup por falha/atraso ou estagnação ao vivo em NotificationPolicyEngine",
+        original="if health.isBackupFailing || health.isLiveBackupStalled {",
+        replacement="if health.isBackupFailing && health.isLiveBackupStalled {",
+    ),
+    MutantSpec(
+        id="M42",
+        relative_file="BrainPanel/App/UsageStore.swift",
+        description="isolamento estrito de notificações reais apenas em modo live com flag habilitada",
+        original="config.mode == .live && config.notificationsEnabled",
+        replacement="config.mode == .live || config.notificationsEnabled",
+    ),
 ]
 
 

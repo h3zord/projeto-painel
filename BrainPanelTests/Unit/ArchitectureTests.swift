@@ -24,6 +24,9 @@ final class ArchitectureTests: XCTestCase {
       "Modules/Brain/Domain",
       "Modules/Brain/Application",
       "Modules/Brain/Adapters",
+      "Modules/Notifications/Domain",
+      "Modules/Notifications/Application",
+      "Modules/Notifications/Adapters",
       "Shared/Config",
       "Shared/Clock",
       "Shared/Errors",
@@ -77,11 +80,19 @@ final class ArchitectureTests: XCTestCase {
         relativePath: "Modules/Brain/Domain/BrainSnapshot.swift",
         content: "import Darwin\nstruct BrainSnapshot { let leaked: ActiveConversation? }"
       ),
+      SourceUnit(
+        relativePath: "Modules/Notifications/Domain/NotificationPolicyEngine.swift",
+        content: "import UserNotifications\nstruct NotificationPolicyEngine {}"
+      ),
+      SourceUnit(
+        relativePath: "Modules/Notifications/Application/NotificationDelivering.swift",
+        content: "import UserNotifications\nprotocol NotificationDelivering {}"
+      ),
     ]
 
     let violations = Self.evaluateArchitecture(units: syntheticUnits)
     XCTAssertGreaterThanOrEqual(
-      violations.count, 8, "Esperava flagrar todas as violações plantadas: \(violations)")
+      violations.count, 10, "Esperava flagrar todas as violações plantadas: \(violations)")
   }
 
   static func evaluateArchitecture(units: [SourceUnit]) -> [String] {
@@ -112,9 +123,11 @@ final class ArchitectureTests: XCTestCase {
     }
 
     let domainForbiddenImports: Set<String> = [
-      "SwiftUI", "AppKit", "Darwin", "OSLog", "Observation", "SQLite3",
+      "SwiftUI", "AppKit", "Darwin", "OSLog", "Observation", "SQLite3", "UserNotifications",
     ]
-    let applicationForbiddenImports: Set<String> = ["SwiftUI", "AppKit", "Darwin", "SQLite3"]
+    let applicationForbiddenImports: Set<String> = [
+      "SwiftUI", "AppKit", "Darwin", "SQLite3", "UserNotifications",
+    ]
 
     let domainForbiddenCategories: Set<String> = [
       "module.application",

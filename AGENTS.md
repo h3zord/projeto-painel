@@ -1,6 +1,6 @@
 # Brain Panel — Regras do Projeto
 
-Aplicativo nativo de barra de menus para macOS (`Brain Panel.app`, `com.h3zord.BrainPanel`) para acompanhamento em tempo real das cotas de uso das CLIs locais (`claude` e `agy`), do contexto das conversas ativas do Claude Code e do Antigravity e do estado operacional do ecossistema Brain, operando em modo estritamente somente-leitura e sem consumir tokens.
+Aplicativo nativo de barra de menus para macOS (`Brain Panel.app`, `com.h3zord.BrainPanel`) para acompanhamento em tempo real das cotas de uso das CLIs locais (`claude` e `agy`), do contexto das conversas ativas do Claude Code e do Antigravity e do estado operacional do ecossistema Brain, com alertas nativos discretos do macOS e operação estritamente somente-leitura sem consumir tokens.
 
 - **Plano do projeto:** [#1 — Brain Panel](https://github.com/h3zord/projeto-painel/issues/1)
 - **Metodologia verificada:** `dev-methodology: 8267b37`
@@ -23,7 +23,7 @@ Aplicativo nativo de barra de menus para macOS (`Brain Panel.app`, `com.h3zord.B
 ## Regras próprias deste repositório
 
 - **Fila obrigatória para portões pesados:** `make ci` e `make mutation` rodam exclusivamente via `~/Brain/bin/brain-ci run -- make ci` e `~/Brain/bin/brain-ci run -- make mutation`.
-- **Isolamento total em testes e CI:** `make test`, `make check`, `make ci` e `make mutation` nunca invocam `claude`, `agy` ou `launchctl` reais, nunca leem `~/.claude`, `~/.cache`, `~/.gemini`, `~/.local/state`, `~/Library/Logs`, `~/Library/LaunchAgents` ou `~/Brain` reais e nunca escrevem em `/Applications` ou `~/Library/LaunchAgents`.
+- **Isolamento total em testes e CI:** `make test`, `make check`, `make ci` e `make mutation` nunca invocam `claude`, `agy` ou `launchctl` reais, nunca acionam `UNUserNotificationCenter.current()`, nunca leem `~/.claude`, `~/.cache`, `~/.gemini`, `~/.local/state`, `~/Library/Logs`, `~/Library/LaunchAgents` ou `~/Brain` reais e nunca escrevem em `/Applications` ou `~/Library/LaunchAgents`.
 - **Artefatos temporários:** todo `DerivedData`, bundle de teste e diretório temporário mora dentro de `local/tmp/`.
 - **Repositório público (`h3zord/projeto-painel`):** proibido incluir segredos, e-mails pessoais, caminhos privados reais da máquina ou capturas brutas com dados sensíveis em código, fixtures, logs ou documentação.
 - **Adaptação de plataforma e arquitetura:** registradas em `docs/adr/0001-plataforma-macos-e-ci.md` e `docs/adr/0002-arquitetura-camadas-erros-e-fronteiras.md`.
@@ -36,8 +36,9 @@ Aplicativo nativo de barra de menus para macOS (`Brain Panel.app`, `com.h3zord.B
 - **Limpeza ANSI/VT100 e tela virtual de terminal:** `BrainPanelTests/Unit/TerminalTextAndScreenTests.swift`
 - **Estado de conversas ativas, compactação (`compact_boundary`/`CHECKPOINT`), limiares percentuais de contexto (`70%`/`80%`) e extração de transcript JSONL:** `BrainPanelTests/Unit/ActiveConversationDomainTests.swift` e `BrainPanelTests/Integration/ActiveConversationCollectorIntegrationTests.swift`
 - **Estado operacional do Brain (4 blocos, falha parcial isolada, mascaramento `flexograv`, cabeçalhos `brain-mail` sem corpo, resolução segura de destinos `brain-pages` e timeout de `launchctl`):** `BrainPanelTests/Unit/BrainDomainTests.swift` e `BrainPanelTests/Integration/BrainStateCollectorIntegrationTests.swift`
-- **Cache por relógio injetado, rótulo inteligente da barra de menus, transição para leitura defasada (`stale`) ou diagnóstico de sessões em erro, concorrência e cancelamento no `deinit`:** `BrainPanelTests/Unit/UsageStoreTests.swift`
-- **Configuração validada no boot (fail-closed, incluindo subcaminhos e fragmentos seguros loopback em `BRAIN_PANEL_BRAIN_PAGES_URL`) e códigos de erro enumerados:** `BrainPanelTests/Unit/AppConfigAndErrorTests.swift`
+- **Política pura de alertas nativos discretos (`< 15%`, espera do dono com mascaramento `flexograv`, `brain-doctor` e `brain-backup`), cooldown/rearme por incidente e adaptador silencioso `UNUserNotificationCenter`:** `BrainPanelTests/Unit/NotificationPolicyAndAdapterTests.swift`
+- **Cache por relógio injetado, rótulo inteligente da barra de menus, transição para leitura defasada (`stale`) ou diagnóstico de sessões em erro, despacho de alertas discretos, concorrência e cancelamento no `deinit`:** `BrainPanelTests/Unit/UsageStoreTests.swift`
+- **Configuração validada no boot (fail-closed, incluindo `BRAIN_PANEL_NOTIFICATIONS_ENABLED` e subcaminhos/fragmentos seguros loopback em `BRAIN_PANEL_BRAIN_PAGES_URL`) e códigos de erro enumerados:** `BrainPanelTests/Unit/AppConfigAndErrorTests.swift`
 - **Não vazamento de dados sensíveis em erros ou logs estruturados (canário):** `BrainPanelTests/Unit/SecurityCanaryTests.swift`
 - **Escrita integral e encerramento garantido (`SIGTERM` -> `SIGKILL`) em pseudo-terminal:** `BrainPanelTests/Integration/PseudoTerminalSessionIntegrationTests.swift`
 - **Instalação local segura, remoção seletiva de legado e preservação de apps vizinhos (`scripts/install-local`):** `BrainPanelTests/Integration/InstallLocalScriptIntegrationTests.swift`
@@ -48,8 +49,9 @@ Aplicativo nativo de barra de menus para macOS (`Brain Panel.app`, `com.h3zord.B
 - `BrainPanel/Modules/Quotas/` — módulo de cotas (`Domain`, `Application`, `Adapters` e views)
 - `BrainPanel/Modules/Sessions/` — módulo de sessões ativas (`Domain`, `Application`, `Adapters` e views)
 - `BrainPanel/Modules/Brain/` — módulo nativo do ecossistema Brain (`Domain`, `Application`, `Adapters` somente-leitura e views da aba `Brain`)
+- `BrainPanel/Modules/Notifications/` — módulo de alertas nativos discretos do macOS (`Domain`, `Application` e `Adapters` com `UNUserNotificationCenter`)
 - `BrainPanel/Shared/` — utilitários transversais (`Config`, `Clock`, `Errors`, `Logging`, `Terminal`)
-- `BrainPanel/App/` — composição raiz (`BrainPanelApp.swift`, `UsageStore.swift`, `MenuBarPresentation.swift`, `MenuTabBar.swift`, `ContentView.swift`)
+- `BrainPanel/App/` — composição raiz (`BrainPanelApp.swift`, `UsageStore.swift`, `NotificationSnapshotBridge.swift`, `MenuBarPresentation.swift`, `MenuTabBar.swift`, `ContentView.swift`)
 - `BrainPanel.xcodeproj` — projeto Xcode macOS (`BrainPanel`, `BrainPanelUnitTests`, `BrainPanelIntegrationTests`)
 - `BrainPanelTests/` — suítes `Unit/`, `Integration/` e contratos sanitizados em `BrainPanelTests/Fixtures/BrainState/`
 - `docs/adr/` — registros de decisão arquitetural

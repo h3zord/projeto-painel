@@ -136,8 +136,16 @@ def check_legacy_references(repo_root: Path) -> list[str]:
 def check_portable_architecture(repo_root: Path) -> list[str]:
     errors: list[str] = []
     bp_root = repo_root / "BrainPanel"
-    domain_forbidden = {"SwiftUI", "AppKit", "Darwin", "OSLog", "Observation", "SQLite3"}
-    app_forbidden = {"SwiftUI", "AppKit", "Darwin", "SQLite3"}
+    domain_forbidden = {
+        "SwiftUI",
+        "AppKit",
+        "Darwin",
+        "OSLog",
+        "Observation",
+        "SQLite3",
+        "UserNotifications",
+    }
+    app_forbidden = {"SwiftUI", "AppKit", "Darwin", "SQLite3", "UserNotifications"}
     import_re = re.compile(r"(?m)^\s*import\s+([A-Za-z0-9_]+)")
 
     for swift_file in sorted(bp_root.rglob("*.swift")):
