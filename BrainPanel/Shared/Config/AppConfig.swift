@@ -444,7 +444,7 @@ nonisolated struct AppConfig: Equatable, Sendable {
       return false
     }
     let urlSegments = body.split(separator: "/", omittingEmptySubsequences: false)
-    guard !urlSegments.contains(where: { $0 == "." || $0 == ".." || $0.contains("..") }) else {
+    guard !urlSegments.contains(where: { $0.contains("..") }) else {
       return false
     }
     return urlSegments.allSatisfy { segment in

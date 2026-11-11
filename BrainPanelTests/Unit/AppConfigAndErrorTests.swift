@@ -160,6 +160,14 @@ final class AppConfigAndErrorTests: XCTestCase {
       expectedSetting: "BRAIN_PANEL_BRAIN_PAGES_URL"
     )
     assertConfigFails(
+      environment: ["BRAIN_PANEL_BRAIN_PAGES_URL": "http://127.0.0.1:4780/./secreto"],
+      expectedSetting: "BRAIN_PANEL_BRAIN_PAGES_URL"
+    )
+    assertConfigFails(
+      environment: ["BRAIN_PANEL_BRAIN_PAGES_URL": "http://127.0.0.1:4780/projeto-painel/doc..1"],
+      expectedSetting: "BRAIN_PANEL_BRAIN_PAGES_URL"
+    )
+    assertConfigFails(
       environment: ["BRAIN_PANEL_BRAIN_PAGES_URL": "http://127.0.0.1:4780/%2e%2e/secreto"],
       expectedSetting: "BRAIN_PANEL_BRAIN_PAGES_URL"
     )
@@ -211,6 +219,9 @@ final class AppConfigAndErrorTests: XCTestCase {
     )
     let externalURL = try XCTUnwrap(URL(string: "https://example.com/painel"))
     let dotDotURL = try XCTUnwrap(URL(string: "http://127.0.0.1:4780/projeto-painel/../secreto"))
+    let embeddedDotDotURL = try XCTUnwrap(
+      URL(string: "http://127.0.0.1:4780/projeto-painel/doc..1")
+    )
     let encodedDotDotURL = try XCTUnwrap(URL(string: "http://127.0.0.1:4780/%2e%2e/secreto"))
     let queryURL = try XCTUnwrap(URL(string: "http://127.0.0.1:4780/fila?cmd=rm"))
     let badFragmentURL = try XCTUnwrap(URL(string: "http://127.0.0.1:4780/#a/b"))
@@ -221,6 +232,7 @@ final class AppConfigAndErrorTests: XCTestCase {
     XCTAssertTrue(BrainTabView.openIfLoopbackSafe(safeSubpathURL) { openedURLs.append($0) })
     XCTAssertFalse(BrainTabView.openIfLoopbackSafe(externalURL) { openedURLs.append($0) })
     XCTAssertFalse(BrainTabView.openIfLoopbackSafe(dotDotURL) { openedURLs.append($0) })
+    XCTAssertFalse(BrainTabView.openIfLoopbackSafe(embeddedDotDotURL) { openedURLs.append($0) })
     XCTAssertFalse(BrainTabView.openIfLoopbackSafe(encodedDotDotURL) { openedURLs.append($0) })
     XCTAssertFalse(BrainTabView.openIfLoopbackSafe(queryURL) { openedURLs.append($0) })
     XCTAssertFalse(BrainTabView.openIfLoopbackSafe(badFragmentURL) { openedURLs.append($0) })

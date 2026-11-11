@@ -266,9 +266,9 @@ MUTANTS: list[MutantSpec] = [
     MutantSpec(
         id="M34",
         relative_file="BrainPanel/Shared/Config/AppConfig.swift",
-        description="bloqueio de segmentos '.' e '..' no caminho de URLs loopback em AppConfig",
-        original='guard !urlSegments.contains(where: { $0 == "." || $0 == ".." || $0.contains("..") }) else {',
-        replacement='guard !urlSegments.contains(where: { $0 == "__nunca__" }) else {',
+        description="bloqueio de '..' em segmentos de caminho de URLs loopback em AppConfig",
+        original='guard !urlSegments.contains(where: { $0.contains("..") }) else {',
+        replacement='guard !urlSegments.contains(where: { $0.contains("__nunca__") }) else {',
     ),
     MutantSpec(
         id="M35",
