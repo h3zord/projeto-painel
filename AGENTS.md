@@ -32,15 +32,15 @@ Aplicativo nativo de barra de menus para macOS (`Brain Panel.app`, `com.h3zord.B
 ## Invariantes do domínio e testes que as garantem
 
 - **Cotas, menor disponibilidade, estado defasado (`stale`) e janelas de renovação:** `BrainPanelTests/Unit/ProviderUsageTests.swift`
-- **Parsing somente-leitura das telas `/usage` e `/quota` (com grupos dinâmicos):** `BrainPanelTests/Unit/ClaudeUsageParserTests.swift` e `BrainPanelTests/Unit/GeminiQuotaParserTests.swift`
-- **Limpeza ANSI/VT100 e tela virtual de terminal:** `BrainPanelTests/Unit/TerminalTextAndScreenTests.swift`
+- **Parsing somente-leitura das telas `/usage` e `/quota` (com grupos dinâmicos, formato `agy 1.5.5+` e avaliação pura de prontidão/banner):** `BrainPanelTests/Unit/ClaudeUsageParserTests.swift`, `BrainPanelTests/Unit/GeminiQuotaParserTests.swift` e `BrainPanelTests/Integration/GeminiCollectorIntegrationTests.swift`
+- **Limpeza ANSI/VT100 (incluindo `ESC M`) e tela virtual de terminal:** `BrainPanelTests/Unit/TerminalTextAndScreenTests.swift`
 - **Estado de conversas ativas, compactação (`compact_boundary`/`CHECKPOINT`), limiares percentuais de contexto (`70%`/`80%`) e extração de transcript JSONL:** `BrainPanelTests/Unit/ActiveConversationDomainTests.swift` e `BrainPanelTests/Integration/ActiveConversationCollectorIntegrationTests.swift`
 - **Estado operacional do Brain (4 blocos, falha parcial isolada, mascaramento `flexograv`, cabeçalhos `brain-mail` sem corpo, resolução segura de destinos `brain-pages` e timeout de `launchctl`):** `BrainPanelTests/Unit/BrainDomainTests.swift` e `BrainPanelTests/Integration/BrainStateCollectorIntegrationTests.swift`
 - **Política pura de alertas nativos discretos (`< 15%`, espera do dono com mascaramento `flexograv`, `brain-doctor` e `brain-backup`), cooldown/rearme por incidente e adaptador silencioso `UNUserNotificationCenter`:** `BrainPanelTests/Unit/NotificationPolicyAndAdapterTests.swift`
 - **Cache por relógio injetado, rótulo inteligente da barra de menus, transição para leitura defasada (`stale`) ou diagnóstico de sessões em erro, despacho de alertas discretos, concorrência e cancelamento no `deinit`:** `BrainPanelTests/Unit/UsageStoreTests.swift`
 - **Configuração validada no boot (fail-closed, incluindo `BRAIN_PANEL_NOTIFICATIONS_ENABLED` e subcaminhos/fragmentos seguros loopback em `BRAIN_PANEL_BRAIN_PAGES_URL`) e códigos de erro enumerados:** `BrainPanelTests/Unit/AppConfigAndErrorTests.swift`
 - **Não vazamento de dados sensíveis em erros ou logs estruturados (canário):** `BrainPanelTests/Unit/SecurityCanaryTests.swift`
-- **Escrita integral e encerramento garantido (`SIGTERM` -> `SIGKILL`) em pseudo-terminal:** `BrainPanelTests/Integration/PseudoTerminalSessionIntegrationTests.swift`
+- **Escrita integral, controlling TTY (`setsid` + `TIOCSCTTY` com `SIGHUP` imediato ao fechar `master`) e encerramento garantido do grupo (`SIGTERM` -> `SIGKILL`) em pseudo-terminal:** `BrainPanelTests/Integration/PseudoTerminalSessionIntegrationTests.swift`
 - **Instalação local segura, remoção seletiva de legado e preservação de apps vizinhos (`scripts/install-local`):** `BrainPanelTests/Integration/InstallLocalScriptIntegrationTests.swift`
 - **Fronteiras de camadas (`Domain` -> `Application` -> `Adapters`), isolamento entre módulos e integridade documental:** `BrainPanelTests/Unit/ArchitectureTests.swift` e `BrainPanelTests/Unit/DocumentationIntegrityTests.swift`
 

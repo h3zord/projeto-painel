@@ -111,6 +111,7 @@ struct ContentView: View {
         Spacer(minLength: 4)
 
         Button {
+          store.shutdown()
           NSApplication.shared.terminate(nil)
         } label: {
           HStack(spacing: 4) {

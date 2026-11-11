@@ -11,6 +11,30 @@ final class TerminalTextAndScreenTests: XCTestCase {
     XCTAssertEqual(cleaned, "Current   session 42% used\n")
   }
 
+  func testTerminalTextStripsReverseIndexEscapeM() {
+    let raw = "Signing in...\r\u{1b}M\u{1b}[2KAntigravity CLI 1.5.5\r\n"
+    let cleaned = TerminalText.clean(Data(raw.utf8))
+    XCTAssertEqual(cleaned, "Signing in...Antigravity CLI 1.5.5\n")
+  }
+
+  func testTerminalScreenHandlesReverseIndexEscapeMWithoutUnderflow() {
+    let raw =
+      "\u{1b}MWelcome to the Antigravity CLI. You are currently not signed in.\r\n"
+      + "Signing in...\r\u{1b}[2K\u{1b}M\r\u{1b}[2KAntigravity CLI 1.5.5 (Google AI Ultra)\r\n"
+      + "> \r\n"
+      + "Auto mode: edits & safe commands auto-approved (shift+tab to cycle)"
+    let screen = TerminalScreen.render(Data(raw.utf8), columns: 80, rows: 6)
+    let nonEmptyLines = screen.split(separator: "\n").map(String.init)
+    XCTAssertEqual(
+      nonEmptyLines,
+      [
+        "Antigravity CLI 1.5.5 (Google AI Ultra)",
+        ">",
+        "Auto mode: edits & safe commands auto-approved (shift+tab to cycle)",
+      ]
+    )
+  }
+
   func testTerminalScreenHandlesRedrawInPlaceAndAlternateBuffer() {
     let raw =
       "\u{1b}[?1049h"

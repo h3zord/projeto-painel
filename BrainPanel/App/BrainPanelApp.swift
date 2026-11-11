@@ -1,6 +1,13 @@
+import AppKit
 import Darwin
 import Foundation
 import SwiftUI
+
+final class BrainPanelAppDelegate: NSObject, NSApplicationDelegate {
+  func applicationWillTerminate(_ notification: Notification) {
+    PseudoTerminalSession.terminateAllActiveSessions(gracePeriod: 0.05)
+  }
+}
 
 @MainActor
 enum BrainPanelRuntime {
@@ -92,6 +99,7 @@ enum BrainPanelBootstrap {
 }
 
 struct BrainPanelApp: App {
+  @NSApplicationDelegateAdaptor(BrainPanelAppDelegate.self) private var appDelegate
   @State private var usageStore: UsageStore
 
   init() {

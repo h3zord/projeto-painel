@@ -165,6 +165,11 @@ final class UsageStore {
     refreshTaskHandle.cancel()
   }
 
+  func shutdown() {
+    refreshTaskHandle.cancel()
+    PseudoTerminalSession.terminateAllActiveSessions(gracePeriod: 0.05)
+  }
+
   /// Atualiza dados somente quando o cache de `cacheTTL` (60 s por padrão) expirou.
   func refreshIfStale() async {
     let now = clock.now()

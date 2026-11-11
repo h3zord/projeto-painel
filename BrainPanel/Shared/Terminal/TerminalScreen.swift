@@ -116,6 +116,8 @@ nonisolated enum TerminalScreen {
           }
         } else if kind == "(" || kind == ")" {
           index += 1
+        } else if kind == "M" {
+          row = max(row - 1, 0)
         }
 
       case "\r":
