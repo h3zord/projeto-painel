@@ -35,8 +35,8 @@ Aplicativo nativo de barra de menus para macOS (`Brain Panel.app`, `com.h3zord.B
 - **Limpeza ANSI/VT100 e tela virtual de terminal:** `BrainPanelTests/Unit/TerminalTextAndScreenTests.swift`
 - **Estado de conversas ativas, compactação (`compact_boundary`/`CHECKPOINT`), limiares percentuais de contexto (`70%`/`80%`) e extração de transcript JSONL:** `BrainPanelTests/Unit/ActiveConversationDomainTests.swift` e `BrainPanelTests/Integration/ActiveConversationCollectorIntegrationTests.swift`
 - **Estado operacional do Brain (4 blocos, falha parcial isolada, mascaramento `flexograv`, cabeçalhos `brain-mail` sem corpo e timeout de `launchctl`):** `BrainPanelTests/Unit/BrainDomainTests.swift` e `BrainPanelTests/Integration/BrainStateCollectorIntegrationTests.swift`
-- **Cache por relógio injetado, transição para leitura defasada (`stale`) em erro, concorrência e cancelamento no `deinit`:** `BrainPanelTests/Unit/UsageStoreTests.swift`
-- **Configuração validada no boot (fail-closed) e códigos de erro enumerados:** `BrainPanelTests/Unit/AppConfigAndErrorTests.swift`
+- **Cache por relógio injetado, rótulo inteligente da barra de menus, transição para leitura defasada (`stale`) ou diagnóstico de sessões em erro, concorrência e cancelamento no `deinit`:** `BrainPanelTests/Unit/UsageStoreTests.swift`
+- **Configuração validada no boot (fail-closed, incluindo loopback `BRAIN_PANEL_BRAIN_PAGES_URL`) e códigos de erro enumerados:** `BrainPanelTests/Unit/AppConfigAndErrorTests.swift`
 - **Não vazamento de dados sensíveis em erros ou logs estruturados (canário):** `BrainPanelTests/Unit/SecurityCanaryTests.swift`
 - **Escrita integral e encerramento garantido (`SIGTERM` -> `SIGKILL`) em pseudo-terminal:** `BrainPanelTests/Integration/PseudoTerminalSessionIntegrationTests.swift`
 - **Fronteiras de camadas (`Domain` -> `Application` -> `Adapters`), isolamento entre módulos e integridade documental:** `BrainPanelTests/Unit/ArchitectureTests.swift` e `BrainPanelTests/Unit/DocumentationIntegrityTests.swift`
@@ -45,9 +45,9 @@ Aplicativo nativo de barra de menus para macOS (`Brain Panel.app`, `com.h3zord.B
 
 - `BrainPanel/Modules/Quotas/` — módulo de cotas (`Domain`, `Application`, `Adapters` e views)
 - `BrainPanel/Modules/Sessions/` — módulo de sessões ativas (`Domain`, `Application`, `Adapters` e views)
-- `BrainPanel/Modules/Brain/` — módulo nativo do ecossistema Brain (`Domain`, `Application` e `Adapters` somente-leitura)
+- `BrainPanel/Modules/Brain/` — módulo nativo do ecossistema Brain (`Domain`, `Application`, `Adapters` somente-leitura e views da aba `Brain`)
 - `BrainPanel/Shared/` — utilitários transversais (`Config`, `Clock`, `Errors`, `Logging`, `Terminal`)
-- `BrainPanel/App/` — composição raiz (`BrainPanelApp.swift`, `UsageStore.swift`, `MenuTabBar.swift`, `ContentView.swift`)
+- `BrainPanel/App/` — composição raiz (`BrainPanelApp.swift`, `UsageStore.swift`, `MenuBarPresentation.swift`, `MenuTabBar.swift`, `ContentView.swift`)
 - `BrainPanel.xcodeproj` — projeto Xcode macOS (`BrainPanel`, `BrainPanelUnitTests`, `BrainPanelIntegrationTests`)
 - `BrainPanelTests/` — suítes `Unit/`, `Integration/` e contratos sanitizados em `BrainPanelTests/Fixtures/BrainState/`
 - `docs/adr/` — registros de decisão arquitetural

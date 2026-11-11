@@ -18,11 +18,45 @@ struct ProviderSummaryCard: View {
     provider.sessionState.isStale
   }
 
+  private var isUnavailable: Bool {
+    provider.sessionState.isUnavailable
+  }
+
+  private var isLoading: Bool {
+    provider.sessionState.isLoading
+  }
+
   private var strokeColor: Color {
+    if isUnavailable {
+      return .red.opacity(isSelected ? 0.68 : 0.42)
+    }
     if isStale {
       return .orange.opacity(isSelected ? 0.68 : 0.42)
     }
     return color.opacity(isSelected ? 0.55 : 0.16)
+  }
+
+  private var hasElevatedBorder: Bool {
+    isSelected || isStale || isUnavailable
+  }
+
+  private var accessibilityValueSummary: String {
+    switch provider.sessionState {
+    case .loading:
+      return "carregando leitura inicial"
+    case .unavailable(let reason):
+      return "indisponível, \(reason)"
+    case .stale:
+      return "leitura defasada, \(limitsVoiceOverSummary)"
+    case .active:
+      return limitsVoiceOverSummary
+    }
+  }
+
+  private var limitsVoiceOverSummary: String {
+    let sessionText = provider.sessionLimit.map { "\($0.remainingPercentage)%" } ?? "indisponível"
+    let weeklyText = provider.weeklyLimit.map { "\($0.remainingPercentage)%" } ?? "indisponível"
+    return "sessão \(sessionText), semanal \(weeklyText)"
   }
 
   @ViewBuilder
@@ -36,6 +70,26 @@ struct ProviderSummaryCard: View {
         .resizable()
         .scaledToFit()
         .frame(width: 12.5, height: 12.5)
+    }
+  }
+
+  @ViewBuilder
+  private var statusIndicator: some View {
+    if isUnavailable {
+      Image(systemName: "xmark.octagon.fill")
+        .font(.system(size: 9.5, weight: .semibold))
+        .foregroundStyle(.red)
+        .help(provider.unavailableReason ?? provider.sessionState.label)
+    } else if isStale {
+      Image(systemName: "exclamationmark.triangle.fill")
+        .font(.system(size: 9.5, weight: .semibold))
+        .foregroundStyle(.orange)
+        .help(provider.staleReason ?? provider.sessionState.label)
+    } else if isLoading {
+      Image(systemName: "clock")
+        .font(.system(size: 9.5, weight: .semibold))
+        .foregroundStyle(.secondary)
+        .help("Aguardando primeira leitura")
     }
   }
 
@@ -54,12 +108,7 @@ struct ProviderSummaryCard: View {
 
           Spacer(minLength: 0)
 
-          if isStale {
-            Image(systemName: "exclamationmark.triangle.fill")
-              .font(.system(size: 9.5, weight: .semibold))
-              .foregroundStyle(.orange)
-              .help(provider.staleReason ?? provider.sessionState.label)
-          }
+          statusIndicator
 
           Image(systemName: "chevron.down")
             .font(.system(size: 8, weight: .semibold))
@@ -67,25 +116,69 @@ struct ProviderSummaryCard: View {
             .rotationEffect(.degrees(isSelected ? 180 : 0))
         }
 
-        AlwaysVisibleLimits(
-          session: provider.sessionLimit,
-          weekly: provider.weeklyLimit,
-          color: color
-        )
+        switch provider.sessionState {
+        case .loading:
+          SummaryStateNotice(
+            headline: "Carregando…",
+            headlineColor: .secondary,
+            detail: "Aguardando leitura inicial"
+          )
+        case .unavailable(let reason):
+          SummaryStateNotice(
+            headline: "Indisponível",
+            headlineColor: .red,
+            detail: reason
+          )
+          .help(reason)
+        case .active, .stale:
+          AlwaysVisibleLimits(
+            session: provider.sessionLimit,
+            weekly: provider.weeklyLimit,
+            color: color
+          )
+        }
       }
       .frame(maxWidth: .infinity, alignment: .topLeading)
       .padding(9)
       .background(color.opacity(isSelected ? 0.15 : 0.09), in: RoundedRectangle(cornerRadius: 10))
       .overlay {
         RoundedRectangle(cornerRadius: 10)
-          .stroke(strokeColor, lineWidth: isSelected || isStale ? 1 : 0.5)
+          .stroke(strokeColor, lineWidth: hasElevatedBorder ? 1 : 0.5)
       }
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
-    .accessibilityLabel(
-      "\(isSelected ? "Ocultar" : "Mostrar") detalhes de \(provider.name)\(isStale ? ", leitura defasada" : "")"
-    )
+    .accessibilityLabel("\(isSelected ? "Ocultar" : "Mostrar") detalhes de \(provider.name)")
+    .accessibilityValue(accessibilityValueSummary)
+  }
+}
+
+private struct SummaryStateNotice: View {
+  let headline: String
+  let headlineColor: Color
+  let detail: String
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 5) {
+      HStack(alignment: .firstTextBaseline, spacing: 3) {
+        Text("Estado")
+          .font(.caption2)
+          .foregroundStyle(.secondary)
+
+        Spacer(minLength: 2)
+
+        Text(headline)
+          .font(.caption.weight(.semibold))
+          .foregroundStyle(headlineColor)
+          .lineLimit(1)
+      }
+
+      Text(detail)
+        .font(.caption2)
+        .foregroundStyle(.tertiary)
+        .lineLimit(1)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
   }
 }
 

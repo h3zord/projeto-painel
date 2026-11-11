@@ -148,6 +148,7 @@ nonisolated struct UsageLimit: Identifiable, Equatable, Sendable {
 }
 
 nonisolated enum SessionState: Equatable, Sendable {
+  case loading
   case active
   case stale(reason: String, lastUpdatedAt: Date)
   case unavailable(String)
@@ -156,9 +157,20 @@ nonisolated enum SessionState: Equatable, Sendable {
     switch self {
     case .active, .stale:
       true
-    case .unavailable:
+    case .loading, .unavailable:
       false
     }
+  }
+
+  var isLoading: Bool {
+    self == .loading
+  }
+
+  var isUnavailable: Bool {
+    if case .unavailable = self {
+      return true
+    }
+    return false
   }
 
   var isStale: Bool {
@@ -170,6 +182,8 @@ nonisolated enum SessionState: Equatable, Sendable {
 
   var label: String {
     switch self {
+    case .loading:
+      "Carregando"
     case .active:
       "Sessão ativa"
     case .stale:
@@ -193,7 +207,7 @@ nonisolated extension ProviderUsage {
       plan: "Pro / Max",
       icon: .asset("ClaudeIcon"),
       tint: .orange,
-      sessionState: .unavailable("Carregando"),
+      sessionState: .loading,
       limits: []
     ),
     ProviderUsage(
@@ -202,7 +216,7 @@ nonisolated extension ProviderUsage {
       plan: "Google AI Pro",
       icon: .symbol("sparkle"),
       tint: .blue,
-      sessionState: .unavailable("Carregando"),
+      sessionState: .loading,
       limits: []
     ),
   ]

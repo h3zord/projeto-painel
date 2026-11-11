@@ -21,6 +21,7 @@ final class SecurityCanaryTests: XCTestCase {
           "BRAIN_PANEL_CLAUDE_SESSIONS_DIR": canaryDocument,
           "BRAIN_PANEL_CLAUDE_CONTEXT_CACHE_DIR": canaryToken,
           "BRAIN_PANEL_ANTIGRAVITY_DIR": canaryDocument,
+          "BRAIN_PANEL_BRAIN_PAGES_URL": "http://\(canaryToken):4780/\(canaryDocument)",
         ],
         defaultHomeDirectory: URL(filePath: "/Users/teste"),
         defaultAppSupportRoot: URL(filePath: "/Users/teste/Library/Application Support"),

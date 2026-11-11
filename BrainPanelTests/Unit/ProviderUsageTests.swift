@@ -4,10 +4,14 @@ import XCTest
 @testable import BrainPanel
 
 final class ProviderUsageTests: XCTestCase {
-  func testPlaceholdersContainOnlyClaudeAndGemini() {
+  func testPlaceholdersContainOnlyClaudeAndGeminiInLoadingState() {
     let ids = ProviderUsage.placeholders.map(\.id)
     XCTAssertEqual(ids, ["claude", "gemini"])
-    XCTAssertTrue(ProviderUsage.placeholders.allSatisfy { $0.sessionState == .unavailable("Carregando") })
+    XCTAssertTrue(ProviderUsage.placeholders.allSatisfy { $0.sessionState == .loading })
+    XCTAssertTrue(ProviderUsage.placeholders.allSatisfy { $0.sessionState.isLoading })
+    XCTAssertTrue(ProviderUsage.placeholders.allSatisfy { !$0.sessionState.isUnavailable })
+    XCTAssertTrue(ProviderUsage.placeholders.allSatisfy { $0.sessionState.label == "Carregando" })
+    XCTAssertTrue(ProviderUsage.placeholders.allSatisfy { $0.unavailableReason == nil })
   }
 
   func testUsageLimitClampsPercentageBounds() {
@@ -104,6 +108,8 @@ final class ProviderUsageTests: XCTestCase {
     let degraded = active.unavailable("CLI ausente")
     XCTAssertEqual(degraded.unavailableReason, "CLI ausente")
     XCTAssertFalse(degraded.sessionState.hasUsableQuota)
+    XCTAssertFalse(degraded.sessionState.isLoading)
+    XCTAssertTrue(degraded.sessionState.isUnavailable)
     XCTAssertEqual(degraded.sessionState.label, "Indisponível")
     XCTAssertTrue(degraded.limits.isEmpty)
   }

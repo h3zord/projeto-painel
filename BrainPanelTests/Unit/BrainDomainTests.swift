@@ -477,6 +477,7 @@ final class BrainDomainTests: XCTestCase {
     )
     XCTAssertEqual(healthySnapshot.waitingOnOwnerCount, 0)
     XCTAssertFalse(healthySnapshot.hasCriticalFailure)
+    XCTAssertFalse(healthySnapshot.needsAttentionBanner)
 
     let criticalHealth = HealthAndBackupState(
       doctorFailures: [DoctorFinding(key: "FAIL 14", severity: .fail, message: "backup atrasado")],
@@ -495,6 +496,12 @@ final class BrainDomainTests: XCTestCase {
       capturedAt: referenceNow
     )
     XCTAssertTrue(criticalSnapshot.hasCriticalFailure)
+    XCTAssertTrue(criticalSnapshot.needsAttentionBanner)
+
+    let previewSnapshot = BrainSnapshot.makePreviewData(now: referenceNow)
+    XCTAssertGreaterThan(previewSnapshot.waitingOnOwnerCount, 0)
+    XCTAssertTrue(previewSnapshot.needsAttentionBanner)
+    XCTAssertTrue(previewSnapshot.degradedSections.isEmpty)
     XCTAssertEqual(RelativeTimeFormatter.compactDuration(seconds: 42), "42s")
     XCTAssertEqual(RelativeTimeFormatter.compactDuration(seconds: 3_900), "1h 05m")
   }

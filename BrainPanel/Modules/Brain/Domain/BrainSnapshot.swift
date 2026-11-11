@@ -352,4 +352,156 @@ nonisolated struct BrainSnapshot: Equatable, Sendable {
     if scheduledJobs.isFailed { result.append(.scheduledJobs) }
     return result
   }
+
+  var needsAttentionBanner: Bool {
+    hasCriticalFailure || waitingOnOwnerCount > 0
+  }
+
+  static func makePreviewData(now: Date) -> BrainSnapshot {
+    BrainSnapshot(
+      waiting: .loaded(
+        WaitingState(
+          pendingPrompts: [
+            PendingPrompt(
+              sessionKey: "painel-lead",
+              askedAt: now.addingTimeInterval(-14 * 60),
+              text: "Aprovar layout da aba Brain antes do merge?",
+              isExplicit: true,
+              hasButton: true
+            )
+          ],
+          stuckMail: [
+            StuckMailbox(
+              recipient: "caixa-lead",
+              unreadCount: 2,
+              oldestMessageAt: now.addingTimeInterval(-42 * 60),
+              senders: ["caixa-dev"]
+            )
+          ],
+          closedMail: [
+            ClosedMailbox(recipient: "sitio-dev", unreadCount: 1)
+          ]
+        )
+      ),
+      ciQueue: .loaded(
+        CIQueueState(
+          queueVersion: 4,
+          versionSince: now.addingTimeInterval(-7 * 86_400),
+          pauseState: nil,
+          isSerial: false,
+          serialReason: nil,
+          serialUntil: nil,
+          vmAvailableMB: 10_240,
+          vmMeasuredAt: now.addingTimeInterval(-20),
+          runningTickets: [
+            CIQueueTicket(
+              id: "01-running",
+              pid: 41_010,
+              project: "projeto-painel",
+              role: "dev",
+              jobType: "ci",
+              command: "make ci",
+              commit: "87b31d0",
+              queuedAt: now.addingTimeInterval(-25),
+              startedAt: now.addingTimeInterval(-22),
+              estimatedDurationSeconds: 40,
+              estimatedMemoryMB: 2_048,
+              isSolo: false,
+              primaryWaitReason: nil
+            )
+          ],
+          waitingTickets: [],
+          todaySummary: CITodaySummary(totalCount: 6, greenCount: 6),
+          recentRuns: [
+            CIRecentRun(
+              id: "run-1",
+              project: "projeto-painel",
+              role: "dev",
+              jobType: "mutation",
+              commit: "01aed716",
+              exitCode: 0,
+              isInterrupted: false,
+              endedAt: now.addingTimeInterval(-15 * 60),
+              durationSeconds: 240,
+              waitedSeconds: 1
+            )
+          ],
+          recentAlerts: []
+        )
+      ),
+      healthAndBackup: .loaded(
+        HealthAndBackupState(
+          doctorFailures: [],
+          doctorWarnings: [
+            DoctorFinding(
+              key: "WARN 23",
+              severity: .warn,
+              message: "orçamento: índice próximo de 160 linhas"
+            )
+          ],
+          doctorCheckedAt: now.addingTimeInterval(-8 * 60),
+          testSuite: TestSuiteStatus(
+            isPassing: true,
+            ranCount: 414,
+            failedTests: [],
+            ranAt: now.addingTimeInterval(-25 * 60)
+          ),
+          syncStatus: SyncStatus(
+            isPassing: true,
+            reason: nil,
+            syncedAt: now.addingTimeInterval(-12 * 60),
+            commitSHA: "8267b37"
+          ),
+          backupStatus: BackupStatus(
+            isPassing: true,
+            isOverdue: false,
+            reason: nil,
+            completedAt: now.addingTimeInterval(-6 * 3_600),
+            snapshotID: "a1b2c3d4",
+            addedBytes: 42_500_000,
+            filesCount: 1_240
+          ),
+          liveBackupProgress: nil
+        )
+      ),
+      scheduledJobs: .loaded(
+        ScheduledJobsState(
+          jobs: [
+            ScheduledJob(
+              label: "com.lucas.awake",
+              title: "Awake: Mac acordado com trabalho",
+              scheduleSummary: "sempre ligado",
+              status: .running,
+              lastRunAt: nil,
+              nextRunAt: nil
+            ),
+            ScheduledJob(
+              label: "com.lucas.brain-sync",
+              title: "Sync do Brain para o GitHub",
+              scheduleSummary: "a cada 1 h",
+              status: .succeeded,
+              lastRunAt: now.addingTimeInterval(-12 * 60),
+              nextRunAt: nil
+            ),
+            ScheduledJob(
+              label: "com.lucas.brain-backup",
+              title: "Backup criptografado no Drive",
+              scheduleSummary: "todo dia 03:30",
+              status: .succeeded,
+              lastRunAt: now.addingTimeInterval(-6 * 3_600),
+              nextRunAt: now.addingTimeInterval(18 * 3_600)
+            ),
+          ],
+          weeklyCleanupAt: now.addingTimeInterval(-2 * 86_400),
+          restoreRehearsal: RestoreRehearsalStatus(
+            isPassing: true,
+            ranAt: now.addingTimeInterval(-3 * 86_400),
+            restoredCount: 40,
+            expectedCount: 40
+          )
+        )
+      ),
+      capturedAt: now
+    )
+  }
 }

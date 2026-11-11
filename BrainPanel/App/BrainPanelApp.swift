@@ -111,6 +111,7 @@ struct BrainPanelApp: App {
       ContentView(store: usageStore)
     } label: {
       Label(usageStore.menuBarLabel, image: "MenuBarIcon")
+        .accessibilityLabel(usageStore.menuBarAccessibilityLabel)
     }
     .menuBarExtraStyle(.window)
   }
