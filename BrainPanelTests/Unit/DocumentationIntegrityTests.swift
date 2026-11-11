@@ -15,7 +15,7 @@ final class DocumentationIntegrityTests: XCTestCase {
       encoding: .utf8
     )
     XCTAssertTrue(
-      agentsContent.contains("dev-methodology: 8267b37"),
+      agentsContent.contains("dev-methodology: b77ddd8"),
       "AGENTS.md precisa registrar o commit conferido da dev-methodology"
     )
 

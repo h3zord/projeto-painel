@@ -62,8 +62,8 @@ def check_documents(repo_root: Path, targets: set[str]) -> list[str]:
         return errors
 
     agents_text = (repo_root / "AGENTS.md").read_text(encoding="utf-8")
-    if "dev-methodology: 8267b37" not in agents_text:
-        errors.append("AGENTS.md não contém 'dev-methodology: 8267b37'")
+    if "dev-methodology: b77ddd8" not in agents_text:
+        errors.append("AGENTS.md não contém 'dev-methodology: b77ddd8'")
 
     claude_text = (repo_root / "CLAUDE.md").read_text(encoding="utf-8").strip()
     if claude_text != "@AGENTS.md":

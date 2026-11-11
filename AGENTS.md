@@ -3,7 +3,7 @@
 Aplicativo nativo de barra de menus para macOS (`Brain Panel.app`, `com.h3zord.BrainPanel`) para acompanhamento em tempo real das cotas de uso das CLIs locais (`claude` e `agy`), do contexto das conversas ativas do Claude Code e do Antigravity e do estado operacional do ecossistema Brain, com alertas nativos discretos do macOS e operação estritamente somente-leitura sem consumir tokens.
 
 - **Plano do projeto:** [#1 — Brain Panel](https://github.com/h3zord/projeto-painel/issues/1)
-- **Metodologia verificada:** `dev-methodology: 8267b37`
+- **Metodologia verificada:** `dev-methodology: b77ddd8`
 
 ## Alvos do Makefile
 
