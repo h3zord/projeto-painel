@@ -1,4 +1,4 @@
-.PHONY: up down test check ci-portable ci mutation hooks clean format
+.PHONY: up down install-local test check ci-portable ci mutation hooks clean format
 
 PROJECT := BrainPanel.xcodeproj
 SCHEME := BrainPanel
@@ -7,6 +7,9 @@ DESTINATION := platform=macOS,arch=$(ARCH)
 GITLEAKS_IMAGE := zricethezav/gitleaks:v8.30.1
 DEV_DERIVED_DATA := local/tmp/dev-derived-data
 DEV_APP := $(DEV_DERIVED_DATA)/Build/Products/Debug/Brain Panel.app
+INSTALL_APPS_DIR ?= /Applications
+INSTALL_OPEN_APP ?= 1
+INSTALL_TERMINATE_RUNNING ?= 1
 XCODE_BASE_ARGS := -project $(PROJECT) -scheme $(SCHEME) -destination '$(DESTINATION)'
 XCODE_TEST_ARGS := -parallel-testing-enabled NO -test-timeouts-enabled YES -default-test-execution-time-allowance 15 -maximum-test-execution-time-allowance 30
 
@@ -19,9 +22,29 @@ down:
 	@pids=$$(pgrep -f "$(DEV_DERIVED_DATA)/Build/Products/Debug/Brain Panel.app/Contents/MacOS/Brain Panel" || [ $$? -eq 1 ]); \
 	if [ -n "$$pids" ]; then kill $$pids; fi
 
+install-local:
+	@set -eu; \
+	run_dir="local/tmp/install-$$$$"; \
+	cleanup() { \
+		status=$$?; \
+		trap - EXIT INT TERM; \
+		if [ -d "$$run_dir" ]; then rm -rf "$$run_dir" || { s=$$?; [ "$$status" -ne 0 ] || status=$$s; }; fi; \
+		exit "$$status"; \
+	}; \
+	trap cleanup EXIT; \
+	trap 'exit 130' INT; \
+	trap 'exit 143' TERM; \
+	mkdir -p "$$run_dir/smoke"; \
+	xcodebuild build $(XCODE_BASE_ARGS) -configuration Release -derivedDataPath "$$run_dir/DerivedDataRelease" SWIFT_TREAT_WARNINGS_AS_ERRORS=YES; \
+	python3 scripts/smoke-app "$$run_dir/DerivedDataRelease/Build/Products/Release/Brain Panel.app" "$$run_dir/smoke"; \
+	set -- --source-app "$$(pwd)/$$run_dir/DerivedDataRelease/Build/Products/Release/Brain Panel.app" --dest-dir "$(INSTALL_APPS_DIR)"; \
+	if [ "$(INSTALL_TERMINATE_RUNNING)" = "1" ]; then set -- "$$@" --terminate-running; fi; \
+	if [ "$(INSTALL_OPEN_APP)" = "1" ]; then set -- "$$@" --open-app; fi; \
+	python3 scripts/install-local "$$@"
+
 hooks:
 	git config core.hooksPath scripts/hooks
-	chmod +x scripts/hooks/pre-push scripts/check-gates scripts/gates/test scripts/check-swift scripts/swift-gates/test scripts/check-docs scripts/run-gitleaks scripts/gitleaks-gates/test scripts/smoke-app scripts/run-mutation
+	chmod +x scripts/hooks/pre-push scripts/check-gates scripts/gates/test scripts/check-swift scripts/swift-gates/test scripts/check-docs scripts/run-gitleaks scripts/gitleaks-gates/test scripts/smoke-app scripts/run-mutation scripts/install-local
 
 format:
 	xcrun swift-format format --in-place --configuration .swift-format --recursive BrainPanel BrainPanelTests

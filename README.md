@@ -46,28 +46,76 @@ make hooks
 Comandos principais do `Makefile`:
 
 ```bash
-make up           # Compila em Debug (local/tmp/dev-derived-data) e abre o Brain Panel.app
-make down         # Encerra a instância de desenvolvimento aberta pelo make up
-make test         # Roda os testes unitários isolados (BrainPanelUnitTests)
-make check        # Portão rápido: travas estáticas, docs, gitleaks, swift-format e testes unitários
-make ci-portable  # Subconjunto portável (travas, docs, arquitetura e gitleaks) usado também no GitHub Actions
-make format       # Formata o código Swift com xcrun swift-format (.swift-format)
-make clean        # Remove artefatos temporários em local/tmp/
+make up             # Compila em Debug (local/tmp/dev-derived-data) e abre o Brain Panel.app
+make down           # Encerra a instância de desenvolvimento aberta pelo make up
+make install-local  # Compila Release, valida smoke-app, instala em /Applications/Brain Panel.app e remove AI Usage Menu.app
+make test           # Roda os testes unitários isolados (BrainPanelUnitTests)
+make check          # Portão rápido: travas estáticas, docs, gitleaks, swift-format e testes unitários
+make ci-portable    # Subconjunto portável (travas, docs, arquitetura e gitleaks) usado também no GitHub Actions
+make format         # Formata o código Swift com xcrun swift-format (.swift-format)
+make clean          # Remove artefatos temporários em local/tmp/
 ```
 
-Para gerar um bundle `Release` isolado em `local/tmp/` pelo terminal (sem modificar `/Applications` automaticamente):
+### Instalação local (`make install-local`)
+
+Para instalar ou atualizar o aplicativo de uso diário no Mac:
 
 ```bash
-xcodebuild build \
-  -project BrainPanel.xcodeproj \
-  -scheme BrainPanel \
-  -configuration Release \
-  -destination "platform=macOS,arch=$(uname -m)" \
-  -derivedDataPath local/tmp/release-build \
-  SWIFT_TREAT_WARNINGS_AS_ERRORS=YES
+make install-local
 ```
 
-O aplicativo compilado ficará em `local/tmp/release-build/Build/Products/Release/Brain Panel.app`. Caso deseje instalá-lo manualmente para uso diário, copie o bundle para `/Applications` e adicione-o em **Ajustes do Sistema → Geral → Itens de Início e Extensões**.
+O alvo compila `Brain Panel.app` em configuração `Release` num diretório temporário isolado (`local/tmp/install-$$`), executa `scripts/smoke-app` sobre o bundle recém-gerado antes de tocar no destino e só então aciona `scripts/install-local` para:
+
+1. Encerrar de forma limpa eventual instância anterior em `/Applications/Brain Panel.app` ou do utilitário provisório `/Applications/AI Usage Menu.app`.
+2. Copiar o novo bundle via `ditto` em área de staging e substituir `/Applications/Brain Panel.app` preservando atributos nativos do macOS (e qualquer outro `.app` vizinho em `/Applications`).
+3. Remover `/Applications/AI Usage Menu.app` caso ainda esteja presente e abrir o `Brain Panel.app` atualizado.
+
+### Inicialização automática via `LaunchAgent` (`com.lucas.brain-panel`)
+
+Além da opção manual em **Ajustes do Sistema → Geral → Itens de Início e Extensões**, você pode registrar um `LaunchAgent` reproduzível em `~/Library/LaunchAgents/com.lucas.brain-panel.plist` (ajustando `/Users/exemplo` para o diretório da sua conta):
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.lucas.brain-panel</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Applications/Brain Panel.app/Contents/MacOS/Brain Panel</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/Users/exemplo/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <false/>
+  <key>ProcessType</key>
+  <string>Interactive</string>
+  <key>StandardOutPath</key>
+  <string>/Users/exemplo/Library/Logs/brain-panel.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/exemplo/Library/Logs/brain-panel.err.log</string>
+</dict>
+</plist>
+```
+
+> [!NOTE]
+> Manter `KeepAlive` como `false` permite iniciar o `Brain Panel.app` automaticamente no login sem relançá-lo em loop quando você clicar em **Encerrar** no rodapé do menu.
+
+Para carregar ou descarregar o agente na sessão gráfica atual:
+
+```bash
+# Carregar e iniciar imediatamente
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.lucas.brain-panel.plist
+
+# Encerrar e descarregar
+launchctl bootout gui/$(id -u)/com.lucas.brain-panel
+```
 
 ---
 

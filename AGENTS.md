@@ -10,6 +10,7 @@ Aplicativo nativo de barra de menus para macOS (`Brain Panel.app`, `com.h3zord.B
 | Alvo | O que executa |
 | --- | --- |
 | `make up` / `make down` | Compila em Debug (em `local/tmp/dev-derived-data`) e inicia ou encerra o `Brain Panel.app` de desenvolvimento |
+| `make install-local` | Compila em Release, valida com `scripts/smoke-app`, instala em `/Applications/Brain Panel.app` via `scripts/install-local` e remove eventual `/Applications/AI Usage Menu.app` provisório |
 | `make test` | Roda os testes unitários isolados (`BrainPanelUnitTests`) com timeout por teste e zero repetições |
 | `make check` | Portão rápido do `scripts/hooks/pre-push`: `make ci-portable`, lint/formato (`xcrun swift-format`) e `make test` |
 | `make ci-portable` | Travas portáveis (Linux e macOS): `scripts/check-gates`, `scripts/check-swift`, `scripts/check-docs` e `scripts/run-gitleaks` (com `scripts/gitleaks-gates/test`) |
@@ -39,6 +40,7 @@ Aplicativo nativo de barra de menus para macOS (`Brain Panel.app`, `com.h3zord.B
 - **Configuração validada no boot (fail-closed, incluindo loopback `BRAIN_PANEL_BRAIN_PAGES_URL`) e códigos de erro enumerados:** `BrainPanelTests/Unit/AppConfigAndErrorTests.swift`
 - **Não vazamento de dados sensíveis em erros ou logs estruturados (canário):** `BrainPanelTests/Unit/SecurityCanaryTests.swift`
 - **Escrita integral e encerramento garantido (`SIGTERM` -> `SIGKILL`) em pseudo-terminal:** `BrainPanelTests/Integration/PseudoTerminalSessionIntegrationTests.swift`
+- **Instalação local segura, remoção seletiva de legado e preservação de apps vizinhos (`scripts/install-local`):** `BrainPanelTests/Integration/InstallLocalScriptIntegrationTests.swift`
 - **Fronteiras de camadas (`Domain` -> `Application` -> `Adapters`), isolamento entre módulos e integridade documental:** `BrainPanelTests/Unit/ArchitectureTests.swift` e `BrainPanelTests/Unit/DocumentationIntegrityTests.swift`
 
 ## Onde está o quê
