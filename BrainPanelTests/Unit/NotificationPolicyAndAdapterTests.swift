@@ -130,6 +130,7 @@ final class NotificationPolicyAndAdapterTests: XCTestCase {
     )
     XCTAssertEqual(Set(alerts.map(\.identifier)).count, 3)
     XCTAssertTrue(alerts.allSatisfy { $0.category == .criticalQuota })
+    guard alerts.count == 3 else { return }
     XCTAssertTrue(alerts[0].title.contains("Claude"))
     XCTAssertTrue(alerts[0].body.contains("14%"))
     XCTAssertTrue(alerts[1].body.contains("8%"))
@@ -225,6 +226,7 @@ final class NotificationPolicyAndAdapterTests: XCTestCase {
       XCTAssertFalse(alert.body.contains("Aprovar PR #16?"))
       XCTAssertFalse(alert.body.contains("Segredo corporativo"))
     }
+    guard alerts.count == 4 else { return }
     XCTAssertTrue(alerts[0].body.contains("painel-lead"))
     XCTAssertTrue(alerts[2].body.contains("caixa-lead"))
   }
@@ -304,7 +306,7 @@ final class NotificationPolicyAndAdapterTests: XCTestCase {
     XCTAssertEqual(alerts.count, 1)
     XCTAssertEqual(alerts.first?.category, .doctorFailure)
     XCTAssertEqual(alerts.first?.incidentKey, "health:doctor_failure")
-    XCTAssertFalse(alerts[0].body.contains("/Users/privado"))
+    XCTAssertEqual(alerts.first?.body.contains("/Users/privado"), false)
   }
 
   func testBackupFailureFiresIndependentlyWhenBackupNeedsAttentionOrLiveProgressIsStalled() {
@@ -434,7 +436,7 @@ final class NotificationPolicyAndAdapterTests: XCTestCase {
     let stalledAlerts = stalledEngine.evaluate(input: stalledInput, now: clock.now())
     XCTAssertEqual(stalledAlerts.count, 1)
     XCTAssertEqual(stalledAlerts.first?.category, .backupFailure)
-    XCTAssertFalse(stalledAlerts[0].body.contains("/Users/privado"))
+    XCTAssertEqual(stalledAlerts.first?.body.contains("/Users/privado"), false)
   }
 
   func testCooldownSuppressesUntilExactBoundaryRearmsOnHealthyResolutionAndPreservesDuringDegradedReads() {

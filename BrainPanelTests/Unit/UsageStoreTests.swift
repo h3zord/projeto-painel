@@ -682,7 +682,7 @@ final class UsageStoreTests: XCTestCase {
     await store.refresh()
     XCTAssertEqual(spyDeliverer.callCount, 1)
     XCTAssertEqual(
-      spyDeliverer.batches[0].alerts.map(\.incidentKey),
+      spyDeliverer.batches.first?.alerts.map(\.incidentKey),
       ["quota:claude:claude-session", "waiting:prompt:painel-lead"]
     )
 
@@ -691,7 +691,7 @@ final class UsageStoreTests: XCTestCase {
     await store.refreshLocalState()
     XCTAssertEqual(spyDeliverer.callCount, 2)
     XCTAssertEqual(
-      spyDeliverer.batches[1].alerts.map(\.incidentKey),
+      spyDeliverer.batches.last?.alerts.map(\.incidentKey),
       ["health:doctor_failure"]
     )
 
@@ -700,7 +700,7 @@ final class UsageStoreTests: XCTestCase {
     await store.refreshLocalState()
     XCTAssertEqual(spyDeliverer.callCount, 3)
     XCTAssertEqual(
-      spyDeliverer.batches[2].alerts.map(\.incidentKey),
+      spyDeliverer.batches.last?.alerts.map(\.incidentKey),
       ["waiting:prompt:painel-lead"]
     )
 
