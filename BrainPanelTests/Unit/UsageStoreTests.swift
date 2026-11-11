@@ -293,4 +293,89 @@ final class UsageStoreTests: XCTestCase {
     await fulfillment(of: [sleepCancelled], timeout: 3.0)
     XCTAssertGreaterThanOrEqual(clock.sleepCancelledCount, 1)
   }
+
+  func testRefreshUpdatesBrainSnapshotAndRetriesDegradedBrainSectionWhenQuotasAreFresh() async {
+    let clock = TestClock()
+    let logSink = InMemoryLogSink()
+    let logger = StructuredLogger(clock: clock, sink: logSink)
+
+    let claudeUsage = ProviderUsage(
+      id: "claude",
+      name: "Claude",
+      plan: "Pro",
+      icon: .asset("ClaudeIcon"),
+      tint: .orange,
+      sessionState: .active,
+      limits: [
+        UsageLimit(
+          id: "claude-session", name: "Sessão", detail: nil, window: .session, usedPercentage: 20,
+          resetsAt: nil)
+      ]
+    )
+    let claudeCollector = StubUsageCollector(providerID: "claude", results: [.success(claudeUsage)])
+
+    let degradedSnapshot = BrainSnapshot(
+      waiting: .loaded(
+        WaitingState(
+          pendingPrompts: [
+            PendingPrompt(
+              sessionKey: "painel-lead",
+              askedAt: clock.now().addingTimeInterval(-120),
+              text: "Escolha A",
+              isExplicit: true,
+              hasButton: true
+            )
+          ],
+          stuckMail: [],
+          closedMail: []
+        )
+      ),
+      ciQueue: .loaded(.empty),
+      healthAndBackup: .failed(AppError.brainStateReadFailed(section: .healthAndBackup)),
+      scheduledJobs: .loaded(.empty),
+      capturedAt: clock.now()
+    )
+    let healthySnapshot = BrainSnapshot(
+      waiting: degradedSnapshot.waiting,
+      ciQueue: .loaded(.empty),
+      healthAndBackup: .loaded(.empty),
+      scheduledJobs: .loaded(.empty),
+      capturedAt: clock.now()
+    )
+
+    let brainCollector = StubBrainStateCollector(
+      results: [.success(degradedSnapshot), .success(healthySnapshot)]
+    )
+
+    let store = UsageStore(
+      collectors: [claudeCollector],
+      conversationCollector: nil,
+      brainCollector: brainCollector,
+      clock: clock,
+      logger: logger,
+      cacheTTL: 60,
+      startPeriodicRefresh: false
+    )
+
+    await store.refreshIfStale()
+    XCTAssertEqual(claudeCollector.callCount, 1)
+    XCTAssertEqual(brainCollector.callCount, 1)
+    XCTAssertEqual(store.brainSnapshot.waitingOnOwnerCount, 1)
+    XCTAssertEqual(store.brainSnapshot.degradedSections, [.healthAndBackup])
+    XCTAssertTrue(logSink.lines.contains { $0.contains("\"event\":\"brain_state_partially_degraded\"") })
+
+    // Cotas frescas (t = 15 s), mas brainSnapshot teve seção degradada (lastBrainUpdated == nil):
+    // refreshIfStale deve rechamar apenas o estado local (brainCollector), sem rechamar cotas.
+    clock.advance(by: 15)
+    await store.refreshIfStale()
+    XCTAssertEqual(claudeCollector.callCount, 1)
+    XCTAssertEqual(brainCollector.callCount, 2)
+    XCTAssertTrue(store.brainSnapshot.degradedSections.isEmpty)
+    XCTAssertTrue(logSink.lines.contains { $0.contains("\"event\":\"brain_state_refreshed\"") })
+
+    // Agora tudo está fresco dentro da janela de 60 s.
+    clock.advance(by: 20)
+    await store.refreshIfStale()
+    XCTAssertEqual(brainCollector.callCount, 2)
+  }
 }

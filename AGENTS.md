@@ -1,6 +1,6 @@
 # Brain Panel — Regras do Projeto
 
-Aplicativo nativo de barra de menus para macOS (`Brain Panel.app`, `com.h3zord.BrainPanel`) para acompanhamento em tempo real das cotas de uso das CLIs locais (`claude` e `agy`) e do contexto das conversas ativas do Claude Code e do Antigravity, operando em modo estritamente somente-leitura e sem consumir tokens.
+Aplicativo nativo de barra de menus para macOS (`Brain Panel.app`, `com.h3zord.BrainPanel`) para acompanhamento em tempo real das cotas de uso das CLIs locais (`claude` e `agy`), do contexto das conversas ativas do Claude Code e do Antigravity e do estado operacional do ecossistema Brain, operando em modo estritamente somente-leitura e sem consumir tokens.
 
 - **Plano do projeto:** [#1 — Brain Panel](https://github.com/h3zord/projeto-painel/issues/1)
 - **Metodologia verificada:** `dev-methodology: 8267b37`
@@ -22,7 +22,7 @@ Aplicativo nativo de barra de menus para macOS (`Brain Panel.app`, `com.h3zord.B
 ## Regras próprias deste repositório
 
 - **Fila obrigatória para portões pesados:** `make ci` e `make mutation` rodam exclusivamente via `~/Brain/bin/brain-ci run -- make ci` e `~/Brain/bin/brain-ci run -- make mutation`.
-- **Isolamento total em testes e CI:** `make test`, `make check`, `make ci` e `make mutation` nunca invocam `claude`, `agy` ou `launchctl` reais, nunca leem `~/.claude`, `~/.cache`, `~/.gemini` ou `~/.local/state` reais e nunca escrevem em `/Applications` ou `~/Library/LaunchAgents`.
+- **Isolamento total em testes e CI:** `make test`, `make check`, `make ci` e `make mutation` nunca invocam `claude`, `agy` ou `launchctl` reais, nunca leem `~/.claude`, `~/.cache`, `~/.gemini`, `~/.local/state`, `~/Library/Logs`, `~/Library/LaunchAgents` ou `~/Brain` reais e nunca escrevem em `/Applications` ou `~/Library/LaunchAgents`.
 - **Artefatos temporários:** todo `DerivedData`, bundle de teste e diretório temporário mora dentro de `local/tmp/`.
 - **Repositório público (`h3zord/projeto-painel`):** proibido incluir segredos, e-mails pessoais, caminhos privados reais da máquina ou capturas brutas com dados sensíveis em código, fixtures, logs ou documentação.
 - **Adaptação de plataforma e arquitetura:** registradas em `docs/adr/0001-plataforma-macos-e-ci.md` e `docs/adr/0002-arquitetura-camadas-erros-e-fronteiras.md`.
@@ -34,20 +34,22 @@ Aplicativo nativo de barra de menus para macOS (`Brain Panel.app`, `com.h3zord.B
 - **Parsing somente-leitura das telas `/usage` e `/quota` (com grupos dinâmicos):** `BrainPanelTests/Unit/ClaudeUsageParserTests.swift` e `BrainPanelTests/Unit/GeminiQuotaParserTests.swift`
 - **Limpeza ANSI/VT100 e tela virtual de terminal:** `BrainPanelTests/Unit/TerminalTextAndScreenTests.swift`
 - **Estado de conversas ativas, compactação (`compact_boundary`/`CHECKPOINT`), limiares percentuais de contexto (`70%`/`80%`) e extração de transcript JSONL:** `BrainPanelTests/Unit/ActiveConversationDomainTests.swift` e `BrainPanelTests/Integration/ActiveConversationCollectorIntegrationTests.swift`
+- **Estado operacional do Brain (4 blocos, falha parcial isolada, mascaramento `flexograv`, cabeçalhos `brain-mail` sem corpo e timeout de `launchctl`):** `BrainPanelTests/Unit/BrainDomainTests.swift` e `BrainPanelTests/Integration/BrainStateCollectorIntegrationTests.swift`
 - **Cache por relógio injetado, transição para leitura defasada (`stale`) em erro, concorrência e cancelamento no `deinit`:** `BrainPanelTests/Unit/UsageStoreTests.swift`
 - **Configuração validada no boot (fail-closed) e códigos de erro enumerados:** `BrainPanelTests/Unit/AppConfigAndErrorTests.swift`
 - **Não vazamento de dados sensíveis em erros ou logs estruturados (canário):** `BrainPanelTests/Unit/SecurityCanaryTests.swift`
 - **Escrita integral e encerramento garantido (`SIGTERM` -> `SIGKILL`) em pseudo-terminal:** `BrainPanelTests/Integration/PseudoTerminalSessionIntegrationTests.swift`
-- **Fronteiras de camadas (`Domain` -> `Application` -> `Adapters`) e integridade documental:** `BrainPanelTests/Unit/ArchitectureTests.swift` e `BrainPanelTests/Unit/DocumentationIntegrityTests.swift`
+- **Fronteiras de camadas (`Domain` -> `Application` -> `Adapters`), isolamento entre módulos e integridade documental:** `BrainPanelTests/Unit/ArchitectureTests.swift` e `BrainPanelTests/Unit/DocumentationIntegrityTests.swift`
 
 ## Onde está o quê
 
 - `BrainPanel/Modules/Quotas/` — módulo de cotas (`Domain`, `Application`, `Adapters` e views)
 - `BrainPanel/Modules/Sessions/` — módulo de sessões ativas (`Domain`, `Application`, `Adapters` e views)
+- `BrainPanel/Modules/Brain/` — módulo nativo do ecossistema Brain (`Domain`, `Application` e `Adapters` somente-leitura)
 - `BrainPanel/Shared/` — utilitários transversais (`Config`, `Clock`, `Errors`, `Logging`, `Terminal`)
 - `BrainPanel/App/` — composição raiz (`BrainPanelApp.swift`, `UsageStore.swift`, `MenuTabBar.swift`, `ContentView.swift`)
 - `BrainPanel.xcodeproj` — projeto Xcode macOS (`BrainPanel`, `BrainPanelUnitTests`, `BrainPanelIntegrationTests`)
-- `BrainPanelTests/` — suítes `Unit/` e `Integration/`
+- `BrainPanelTests/` — suítes `Unit/`, `Integration/` e contratos sanitizados em `BrainPanelTests/Fixtures/BrainState/`
 - `docs/adr/` — registros de decisão arquitetural
 - `scripts/` — verificadores de portões, travas estáticas de Swift com provas, smoke test, mutação e hooks
 - `local/` — diretórios locais ignorados pelo git (`tmp/`, `worktrees/`, `data/`, `private/`)

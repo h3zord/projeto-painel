@@ -1,0 +1,20 @@
+{
+  "pid": 41005,
+  "project": "projeto-caixa",
+  "role": "dev",
+  "session": "caixa-dev",
+  "cmd": "make mutation",
+  "commit": "a1b2c3d",
+  "queued": 1762819720.0,
+  "started": null,
+  "claimed": null,
+  "folder": "projeto-caixa",
+  "type": "mutation",
+  "dur_est": 180.0,
+  "mem_est": 2048.0,
+  "solo": true,
+  "waits": {
+    "espera vaga": 30.0,
+    "espera memória": 120.0
+  }
+}

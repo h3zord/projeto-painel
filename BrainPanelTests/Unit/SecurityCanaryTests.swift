@@ -79,7 +79,55 @@ final class SecurityCanaryTests: XCTestCase {
     let agySnapshot = AntigravityTranscriptParser.parse(lines: agyLines)
     XCTAssertEqual(agySnapshot.contextTokens, 5_000)
 
-    // 5. Exceção inesperada externa contendo o canário passando pela UsageStore e pelo logger
+    // 5. Estado do Brain: text de brain-mail nunca é decodificado e dados flexograv nunca vazam
+    let mailPayload = Data(
+      #"{"id":"m1","from":"painel-dev","to":"painel-lead","at":1762815000,"text":"\#(canaryToken) \#(canaryDocument)"}"#
+        .utf8
+    )
+    let flexogravPending = Data(
+      #"{"name":"flexograv-lead","project":"flexograv","transcript":"/Users/exemplo/flexograv/t.jsonl","at":1762819100,"text":"\#(canaryToken) \#(canaryDocument)"}"#
+        .utf8
+    )
+    let waitingState = BrainWaitingEvaluator.evaluate(
+      pendingCandidates: [
+        .init(jsonData: flexogravPending, transcriptModifiedAt: nil)
+      ],
+      mailboxes: [
+        .init(recipient: "painel-lead", messagePayloads: [mailPayload])
+      ],
+      openSessionNames: ["painel-lead"],
+      now: clock.now()
+    )
+    XCTAssertEqual(waitingState.pendingPrompts.count, 1)
+    XCTAssertNil(waitingState.pendingPrompts.first?.text)
+    assertNoCanary(in: String(describing: waitingState))
+
+    let flexogravTicket = Data(
+      #"{"pid":99,"project":"flexograv-erp","role":"dev","cmd":"\#(canaryToken)","commit":"\#(canaryDocument)","queued":1762819100,"started":1762819110,"folder":"/Documents/flexograv"}"#
+        .utf8
+    )
+    let flexogravRun = Substring(
+      #"{"kind":"run","queue_version":4,"project":"flexograv-erp","dir":"/Documents/flexograv","type":"ci","role":"dev","cmd":"\#(canaryToken)","commit":"\#(canaryDocument)","queued":1762819000,"start":1762819010,"end":1762819150,"exit":0,"interrupted":false}"#
+    )
+    let flexogravAlert = Substring(
+      #"{"at":1762819150,"project":"flexograv-erp","cmd":"\#(canaryToken)","alarm":"\#(canaryDocument)"}"#
+    )
+    let ciState = BrainCIQueueEvaluator.evaluate(
+      inputs: .init(
+        versionData: Data(#"{"version":4}"#.utf8),
+        pausedData: nil,
+        modeData: nil,
+        vmNowData: nil,
+        ticketPayloads: [(id: "t1", data: flexogravTicket)],
+        runLines: [flexogravRun],
+        alertLines: [flexogravAlert]
+      ),
+      now: clock.now(),
+      isProcessAlive: { _ in true }
+    )
+    assertNoCanary(in: String(describing: ciState))
+
+    // 6. Exceção inesperada externa contendo o canário passando pela UsageStore e pelo logger
     struct RawExternalFailure: Error, LocalizedError {
       let message: String
       var errorDescription: String? { message }
@@ -107,9 +155,16 @@ final class SecurityCanaryTests: XCTestCase {
       ]
     )
 
+    let failingBrainCollector = StubBrainStateCollector(
+      results: [
+        .failure(RawExternalFailure(message: "Falha brain \(canaryToken) \(canaryDocument)"))
+      ]
+    )
+
     let store = UsageStore(
       collectors: [failingCollector, succeedingCollector],
       conversationCollector: nil,
+      brainCollector: failingBrainCollector,
       clock: clock,
       logger: logger,
       startPeriodicRefresh: false

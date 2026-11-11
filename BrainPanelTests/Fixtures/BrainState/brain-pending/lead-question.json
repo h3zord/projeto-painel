@@ -1,0 +1,12 @@
+{
+  "name": "painel-lead",
+  "project": "projeto-painel",
+  "tool": "antigravity",
+  "session": "cid-1",
+  "transcript": "/Users/exemplo/.gemini/antigravity-cli/brain/cid-1/.system_generated/logs/transcript.jsonl",
+  "at": 1762818600,
+  "text": "Escolha a estratégia da Etapa 3",
+  "explicit": true,
+  "button": true,
+  "told": 1762818900
+}

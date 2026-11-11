@@ -1,0 +1,6 @@
+{"kind":"run","queue_version":3,"project":"projeto-painel","role":"dev","type":"ci","cmd":"make ci","commit":"0000old","queued":1762819300,"start":1762819301,"end":1762819320,"exit":0,"interrupted":false}
+{"kind":"top","queue_version":4,"at":1762819310,"load1":1.2}
+{"kind":"run","queue_version":4,"project":"projeto-caixa","role":"dev","dir":"projeto-caixa","type":"ci","cmd":"make ci","commit":"111122223333","queued":1762700000,"start":1762700005,"end":1762700050,"exit":0,"interrupted":false}
+{"kind":"run","queue_version":4,"project":"projeto-painel","role":"dev","dir":"projeto-painel","type":"ci","cmd":"make ci","commit":"82ac8ddb93f5","queued":1762819300,"start":1762819302,"end":1762819344,"exit":0,"interrupted":false}
+{"kind":"run","queue_version":4,"project":"projeto-painel","role":"dev","dir":"projeto-painel","type":"mutation","cmd":"make mutation","commit":"82ac8ddb93f5","queued":1762819400,"start":1762819410,"end":1762819500,"exit":0,"interrupted":true}
+{"kind":"run","queue_version":4,"project":"flexograv-erp","role":"dev","dir":"/Users/exemplo/Documents/flexograv-erp","type":"ci","cmd":"CMD-CORPORATIVO-RUN","commit":"COMMIT-CORPORATIVO-RUN","queued":1762819550,"start":1762819555,"end":1762819610,"exit":0,"interrupted":false}

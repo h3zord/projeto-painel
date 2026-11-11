@@ -1,0 +1,7 @@
+{
+  "keys": {
+    "FAIL 14 backup": "FAIL 14 backup: snapshot atrasado",
+    "WARN 23 orçamento": "WARN 23 orçamento: índice perto do teto"
+  },
+  "alerted": 0
+}

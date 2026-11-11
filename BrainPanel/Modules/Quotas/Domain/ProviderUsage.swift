@@ -100,22 +100,7 @@ nonisolated struct ProviderUsage: Identifiable, Equatable, Sendable {
   }
 
   static func staleAgeSummary(since lastUpdatedAt: Date, now: Date) -> String {
-    let elapsedSeconds = max(Int(now.timeIntervalSince(lastUpdatedAt)), 0)
-    let totalMinutes = elapsedSeconds / 60
-    let days = totalMinutes / 1_440
-    let hours = (totalMinutes % 1_440) / 60
-    let minutes = totalMinutes % 60
-
-    if days > 0 {
-      return "Última leitura válida há \(days)d \(hours)h"
-    }
-    if hours > 0 {
-      return "Última leitura válida há \(hours)h \(minutes)m"
-    }
-    if minutes > 0 {
-      return "Última leitura válida há \(minutes)m"
-    }
-    return "Última leitura válida há instantes"
+    "Última leitura válida \(RelativeTimeFormatter.elapsedPhrase(since: lastUpdatedAt, now: now))"
   }
 }
 

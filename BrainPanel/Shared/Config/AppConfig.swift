@@ -25,6 +25,10 @@ nonisolated struct AppConfig: Equatable, Sendable {
     "BRAIN_PANEL_CLAUDE_CONTEXT_CACHE_DIR",
     "BRAIN_PANEL_ANTIGRAVITY_DIR",
     "BRAIN_PANEL_BRAIN_SESSIONS_STATE_DIR",
+    "BRAIN_PANEL_BRAIN_STATE_DIR",
+    "BRAIN_PANEL_LOGS_DIR",
+    "BRAIN_PANEL_LAUNCH_AGENTS_DIR",
+    "BRAIN_PANEL_BACKUP_PROGRESS_FILE",
     "BRAIN_PANEL_APP_SUPPORT_DIR",
     "BRAIN_PANEL_CLI_SEARCH_PATHS",
   ]
@@ -40,6 +44,10 @@ nonisolated struct AppConfig: Equatable, Sendable {
   let claudeContextCacheDirectory: URL
   let antigravityDirectory: URL
   let brainSessionsStateDirectory: URL
+  let brainStateDirectory: URL
+  let logsDirectory: URL
+  let launchAgentsDirectory: URL
+  let backupProgressFileURL: URL
   let appSupportDirectory: URL
   let cliSearchPaths: [String]
   let childCLIEnvironment: [String: String]
@@ -50,6 +58,22 @@ nonisolated struct AppConfig: Equatable, Sendable {
 
   var cacheTTL: TimeInterval {
     TimeInterval(cacheTTLSeconds)
+  }
+
+  var brainPendingStateDirectory: URL {
+    brainStateDirectory.appending(path: "brain-pending", directoryHint: .isDirectory)
+  }
+
+  var brainMailStateDirectory: URL {
+    brainStateDirectory.appending(path: "brain-mail", directoryHint: .isDirectory)
+  }
+
+  var brainCIStateDirectory: URL {
+    brainStateDirectory.appending(path: "brain-ci", directoryHint: .isDirectory)
+  }
+
+  var brainWeeklyStateDirectory: URL {
+    brainStateDirectory.appending(path: "brain-weekly", directoryHint: .isDirectory)
   }
 
   static func loadFromProcessEnvironment(
@@ -78,7 +102,8 @@ nonisolated struct AppConfig: Equatable, Sendable {
       }
     }
 
-    let resolvedBundleID = try validateBundleIdentifier(bundleIdentifier ?? Self.defaultBundleIdentifier)
+    let resolvedBundleID = try validateBundleIdentifier(
+      bundleIdentifier ?? Self.defaultBundleIdentifier)
     let mode = try parseMode(from: environment)
     let refreshSeconds = try parseBoundedInt(
       key: "BRAIN_PANEL_REFRESH_INTERVAL_SECONDS",
@@ -101,7 +126,10 @@ nonisolated struct AppConfig: Equatable, Sendable {
     let defaultProjectsDir: URL
     let defaultContextCacheDir: URL
     let defaultAntigravityDir: URL
-    let defaultBrainSessionsStateDir: URL
+    let defaultBrainStateDir: URL
+    let defaultLogsDir: URL
+    let defaultLaunchAgentsDir: URL
+    let defaultBackupProgressFile: URL
     let defaultSupportDir: URL
     let defaultSearchPaths: [String]
 
@@ -122,9 +150,21 @@ nonisolated struct AppConfig: Equatable, Sendable {
         path: ".gemini/antigravity-cli",
         directoryHint: .isDirectory
       )
-      defaultBrainSessionsStateDir = homeURL.appending(
-        path: ".local/state/brain-sessions",
+      defaultBrainStateDir = homeURL.appending(
+        path: ".local/state",
         directoryHint: .isDirectory
+      )
+      defaultLogsDir = homeURL.appending(
+        path: "Library/Logs",
+        directoryHint: .isDirectory
+      )
+      defaultLaunchAgentsDir = homeURL.appending(
+        path: "Library/LaunchAgents",
+        directoryHint: .isDirectory
+      )
+      defaultBackupProgressFile = homeURL.appending(
+        path: "Brain/local/pages/backup-drive.json",
+        directoryHint: .notDirectory
       )
       defaultSupportDir = defaultAppSupportRoot.appending(
         path: resolvedBundleID,
@@ -141,8 +181,10 @@ nonisolated struct AppConfig: Equatable, Sendable {
         "/sbin",
       ]
     case .isolated, .selfCheck, .testing:
-      defaultSessionsDir = isolatedRoot.appending(path: "claude-sessions", directoryHint: .isDirectory)
-      defaultProjectsDir = isolatedRoot.appending(path: "claude-projects", directoryHint: .isDirectory)
+      defaultSessionsDir = isolatedRoot.appending(
+        path: "claude-sessions", directoryHint: .isDirectory)
+      defaultProjectsDir = isolatedRoot.appending(
+        path: "claude-projects", directoryHint: .isDirectory)
       defaultContextCacheDir = isolatedRoot.appending(
         path: "claude-context",
         directoryHint: .isDirectory
@@ -151,12 +193,26 @@ nonisolated struct AppConfig: Equatable, Sendable {
         path: "antigravity-cli",
         directoryHint: .isDirectory
       )
-      defaultBrainSessionsStateDir = isolatedRoot.appending(
-        path: "brain-sessions",
+      defaultBrainStateDir = isolatedRoot.appending(
+        path: "local-state",
         directoryHint: .isDirectory
       )
+      defaultLogsDir = isolatedRoot.appending(
+        path: "logs",
+        directoryHint: .isDirectory
+      )
+      defaultLaunchAgentsDir = isolatedRoot.appending(
+        path: "launch-agents",
+        directoryHint: .isDirectory
+      )
+      defaultBackupProgressFile = isolatedRoot.appending(
+        path: "pages/backup-drive.json",
+        directoryHint: .notDirectory
+      )
       defaultSupportDir = isolatedRoot.appending(path: "app-support", directoryHint: .isDirectory)
-      defaultSearchPaths = [isolatedRoot.appending(path: "empty-bin", directoryHint: .isDirectory).path]
+      defaultSearchPaths = [
+        isolatedRoot.appending(path: "empty-bin", directoryHint: .isDirectory).path
+      ]
     }
 
     let claudeSessionsDirectory = try parseOptionalDirectory(
@@ -179,10 +235,34 @@ nonisolated struct AppConfig: Equatable, Sendable {
       in: environment,
       defaultURL: defaultAntigravityDir
     )
+    let brainStateDirectory = try parseOptionalDirectory(
+      key: "BRAIN_PANEL_BRAIN_STATE_DIR",
+      in: environment,
+      defaultURL: defaultBrainStateDir
+    )
+    let defaultBrainSessionsStateDir = brainStateDirectory.appending(
+      path: "brain-sessions",
+      directoryHint: .isDirectory
+    )
     let brainSessionsStateDirectory = try parseOptionalDirectory(
       key: "BRAIN_PANEL_BRAIN_SESSIONS_STATE_DIR",
       in: environment,
       defaultURL: defaultBrainSessionsStateDir
+    )
+    let logsDirectory = try parseOptionalDirectory(
+      key: "BRAIN_PANEL_LOGS_DIR",
+      in: environment,
+      defaultURL: defaultLogsDir
+    )
+    let launchAgentsDirectory = try parseOptionalDirectory(
+      key: "BRAIN_PANEL_LAUNCH_AGENTS_DIR",
+      in: environment,
+      defaultURL: defaultLaunchAgentsDir
+    )
+    let backupProgressFileURL = try parseOptionalFile(
+      key: "BRAIN_PANEL_BACKUP_PROGRESS_FILE",
+      in: environment,
+      defaultURL: defaultBackupProgressFile
     )
     let appSupportDirectory = try parseOptionalDirectory(
       key: "BRAIN_PANEL_APP_SUPPORT_DIR",
@@ -214,6 +294,10 @@ nonisolated struct AppConfig: Equatable, Sendable {
       claudeContextCacheDirectory: claudeContextCacheDirectory,
       antigravityDirectory: antigravityDirectory,
       brainSessionsStateDirectory: brainSessionsStateDirectory,
+      brainStateDirectory: brainStateDirectory,
+      logsDirectory: logsDirectory,
+      launchAgentsDirectory: launchAgentsDirectory,
+      backupProgressFileURL: backupProgressFileURL,
       appSupportDirectory: appSupportDirectory,
       cliSearchPaths: cliSearchPaths,
       childCLIEnvironment: childEnv
@@ -259,6 +343,18 @@ nonisolated struct AppConfig: Equatable, Sendable {
     }
     let validated = try validateAbsolutePath(raw, setting: key)
     return URL(filePath: validated, directoryHint: .isDirectory)
+  }
+
+  private static func parseOptionalFile(
+    key: String,
+    in environment: [String: String],
+    defaultURL: URL
+  ) throws(AppError) -> URL {
+    guard let raw = environment[key] else {
+      return defaultURL
+    }
+    let validated = try validateAbsolutePath(raw, setting: key)
+    return URL(filePath: validated, directoryHint: .notDirectory)
   }
 
   private static func parseSearchPaths(

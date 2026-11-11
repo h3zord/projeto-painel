@@ -1,0 +1,17 @@
+{
+  "pid": 41006,
+  "project": "flexograv-api",
+  "role": "dev",
+  "session": "flexograv-dev",
+  "cmd": "CMD-CORPORATIVO-TICKET",
+  "commit": "COMMIT-CORPORATIVO-TICKET",
+  "queued": 1762819730.0,
+  "started": 1762819735.0,
+  "claimed": null,
+  "folder": "/Users/exemplo/Documents/flexograv-api",
+  "type": "ci",
+  "dur_est": 60.0,
+  "mem_est": 1024.0,
+  "solo": false,
+  "waits": {}
+}

@@ -21,6 +21,9 @@ final class ArchitectureTests: XCTestCase {
       "Modules/Sessions/Domain",
       "Modules/Sessions/Application",
       "Modules/Sessions/Adapters",
+      "Modules/Brain/Domain",
+      "Modules/Brain/Application",
+      "Modules/Brain/Adapters",
       "Shared/Config",
       "Shared/Clock",
       "Shared/Errors",
@@ -70,11 +73,15 @@ final class ArchitectureTests: XCTestCase {
         relativePath: "Modules/Sessions/Application/ConversationCollecting.swift",
         content: "import SQLite3\nprotocol ConversationCollecting { func bad(_ c: ClaudeCollector) }"
       ),
+      SourceUnit(
+        relativePath: "Modules/Brain/Domain/BrainSnapshot.swift",
+        content: "import Darwin\nstruct BrainSnapshot { let leaked: ActiveConversation? }"
+      ),
     ]
 
     let violations = Self.evaluateArchitecture(units: syntheticUnits)
     XCTAssertGreaterThanOrEqual(
-      violations.count, 6, "Esperava flagrar todas as violações plantadas: \(violations)")
+      violations.count, 8, "Esperava flagrar todas as violações plantadas: \(violations)")
   }
 
   static func evaluateArchitecture(units: [SourceUnit]) -> [String] {

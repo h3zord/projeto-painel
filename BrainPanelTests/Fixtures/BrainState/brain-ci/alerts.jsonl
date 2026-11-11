@@ -1,0 +1,3 @@
+{"at":1762700000,"project":"projeto-painel","cmd":"make ci","waited":900,"alarm":"alerta antigo fora de 24h"}
+{"at":1762819400,"project":"projeto-painel","cmd":"make mutation","waited":600,"alarm":"espera memória há 10 min"}
+{"at":1762819500,"project":"flexograv-api","cmd":"CMD-CORPORATIVO-ALERTA","waited":700,"alarm":"DETALHE-CORPORATIVO-ALERTA"}

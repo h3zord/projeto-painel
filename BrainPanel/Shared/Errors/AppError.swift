@@ -13,7 +13,28 @@ nonisolated enum AppErrorCode: String, CaseIterable, Equatable, Sendable, Codabl
   case untrustedPromptFormat = "CLI_TRUST_PROMPT_UNKNOWN"
   case unexpectedOutputFormat = "OUTPUT_PARSE_FAILED"
   case transcriptReadFailed = "TRANSCRIPT_READ_FAILED"
+  case brainStateReadFailed = "BRAIN_STATE_READ_FAILED"
   case internalFailure = "INTERNAL_FAILURE"
+}
+
+nonisolated enum KnownBrainSection: String, CaseIterable, Equatable, Sendable {
+  case waiting = "waiting"
+  case ciQueue = "ci_queue"
+  case healthAndBackup = "health_backup"
+  case scheduledJobs = "scheduled_jobs"
+
+  var displayName: String {
+    switch self {
+    case .waiting:
+      "Esperando você"
+    case .ciQueue:
+      "Fila da máquina"
+    case .healthAndBackup:
+      "Saúde e backup"
+    case .scheduledJobs:
+      "Jobs agendados"
+    }
+  }
 }
 
 nonisolated enum KnownCLIExecutable: String, CaseIterable, Equatable, Sendable {
@@ -118,6 +139,13 @@ nonisolated struct AppError: Error, Equatable, Sendable {
     AppError(
       code: .transcriptReadFailed,
       userMessage: "Não foi possível ler o registro local de sessões ativas."
+    )
+  }
+
+  static func brainStateReadFailed(section: KnownBrainSection) -> AppError {
+    AppError(
+      code: .brainStateReadFailed,
+      userMessage: "Não foi possível ler a seção '\(section.displayName)' do estado local do Brain."
     )
   }
 

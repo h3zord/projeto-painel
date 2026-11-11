@@ -27,12 +27,15 @@ nonisolated final class RefreshTaskHandle: @unchecked Sendable {
 final class UsageStore {
   private(set) var providers: [ProviderUsage]
   private(set) var activeConversations: [ActiveConversation]
+  private(set) var brainSnapshot: BrainSnapshot
   private(set) var lastUpdated: Date?
   private(set) var lastConversationsUpdated: Date?
+  private(set) var lastBrainUpdated: Date?
   private(set) var isRefreshing = false
 
   private let collectors: [any UsageCollector]
   private let conversationCollector: (any ConversationCollecting)?
+  private let brainCollector: (any BrainStateCollecting)?
   private let clock: any Clock
   private let logger: StructuredLogger
   private let refreshInterval: Duration
@@ -43,8 +46,10 @@ final class UsageStore {
   init(
     providers: [ProviderUsage] = ProviderUsage.placeholders,
     activeConversations: [ActiveConversation] = [],
+    brainSnapshot: BrainSnapshot = .empty,
     collectors: [any UsageCollector],
     conversationCollector: (any ConversationCollecting)?,
+    brainCollector: (any BrainStateCollecting)? = nil,
     clock: any Clock = SystemClock(),
     logger: StructuredLogger? = nil,
     refreshInterval: Duration = .seconds(300),
@@ -53,14 +58,19 @@ final class UsageStore {
   ) {
     self.providers = providers
     self.activeConversations = activeConversations
+    self.brainSnapshot = brainSnapshot
     self.collectors = collectors
     self.conversationCollector = conversationCollector
+    self.brainCollector = brainCollector
     self.clock = clock
     self.logger = logger ?? StructuredLogger(clock: clock)
     self.refreshInterval = refreshInterval
     self.cacheTTL = cacheTTL
 
-    guard startPeriodicRefresh, !collectors.isEmpty || conversationCollector != nil else {
+    guard
+      startPeriodicRefresh,
+      !collectors.isEmpty || conversationCollector != nil || brainCollector != nil
+    else {
       return
     }
 
@@ -111,8 +121,10 @@ final class UsageStore {
   func refreshIfStale() async {
     let now = clock.now()
 
-    let quotasAreFresh =
-      if let lastUpdated {
+    let quotasAreFresh: Bool =
+      if collectors.isEmpty {
+        true
+      } else if let lastUpdated {
         now.timeIntervalSince(lastUpdated) < cacheTTL
       } else {
         false
@@ -123,52 +135,115 @@ final class UsageStore {
       return
     }
 
-    let conversationsAreFresh =
-      if let lastConversationsUpdated {
+    let conversationsAreFresh: Bool =
+      if conversationCollector == nil {
+        true
+      } else if let lastConversationsUpdated {
         now.timeIntervalSince(lastConversationsUpdated) < cacheTTL
       } else {
         false
       }
 
-    if !conversationsAreFresh {
+    let brainIsFresh: Bool =
+      if brainCollector == nil {
+        true
+      } else if let lastBrainUpdated {
+        now.timeIntervalSince(lastBrainUpdated) < cacheTTL
+      } else {
+        false
+      }
+
+    if !conversationsAreFresh || !brainIsFresh {
       await refreshLocalState()
     }
   }
 
   func refreshLocalState(refreshID: String? = nil) async {
-    guard let conversationCollector else { return }
+    guard conversationCollector != nil || brainCollector != nil else { return }
     let correlationID = refreshID ?? nextRefreshID(prefix: "local")
 
-    do {
-      let conversations = try await conversationCollector.fetchActiveConversations()
-      activeConversations = conversations
-      lastConversationsUpdated = clock.now()
-      logger.info(
-        event: "sessions_refreshed",
-        refreshID: correlationID,
-        fields: [
-          .collector: "active_sessions",
-          .status: "ok",
-          .conversationsCount: "\(conversations.count)",
-        ]
-      )
-    } catch {
-      let appError = ErrorHandler.normalize(error)
-      logger.warn(
-        event: "sessions_refresh_failed",
-        refreshID: correlationID,
-        errorCode: appError.code,
-        fields: [
-          .collector: "active_sessions",
-          .status: "failed",
-        ]
-      )
+    if let conversationCollector {
+      do {
+        let conversations = try await conversationCollector.fetchActiveConversations()
+        activeConversations = conversations
+        lastConversationsUpdated = clock.now()
+        logger.info(
+          event: "sessions_refreshed",
+          refreshID: correlationID,
+          fields: [
+            .collector: "active_sessions",
+            .status: "ok",
+            .conversationsCount: "\(conversations.count)",
+          ]
+        )
+      } catch {
+        let appError = ErrorHandler.normalize(error)
+        logger.warn(
+          event: "sessions_refresh_failed",
+          refreshID: correlationID,
+          errorCode: appError.code,
+          fields: [
+            .collector: "active_sessions",
+            .status: "failed",
+          ]
+        )
+      }
+    }
+
+    if let brainCollector {
+      do {
+        let snapshot = try await brainCollector.fetchBrainState()
+        brainSnapshot = snapshot
+        let degraded = snapshot.degradedSections
+        if degraded.isEmpty {
+          lastBrainUpdated = clock.now()
+          logger.info(
+            event: "brain_state_refreshed",
+            refreshID: correlationID,
+            fields: [
+              .collector: "brain_state",
+              .status: "ok",
+              .waitingCount: "\(snapshot.waitingOnOwnerCount)",
+            ]
+          )
+        } else {
+          let firstError =
+            snapshot.waiting.error
+            ?? snapshot.ciQueue.error
+            ?? snapshot.healthAndBackup.error
+            ?? snapshot.scheduledJobs.error
+          logger.warn(
+            event: "brain_state_partially_degraded",
+            refreshID: correlationID,
+            errorCode: firstError?.code,
+            fields: [
+              .collector: "brain_state",
+              .status: "degraded",
+              .degradedSectionsCount: "\(degraded.count)",
+              .section: degraded.map(\.rawValue).joined(separator: ","),
+            ]
+          )
+        }
+      } catch {
+        let appError = ErrorHandler.normalize(error)
+        logger.warn(
+          event: "brain_state_refresh_failed",
+          refreshID: correlationID,
+          errorCode: appError.code,
+          fields: [
+            .collector: "brain_state",
+            .status: "failed",
+          ]
+        )
+      }
     }
   }
 
   func refresh() async {
     guard !isRefreshing else { return }
-    guard !collectors.isEmpty || conversationCollector != nil else { return }
+    guard !collectors.isEmpty || conversationCollector != nil || brainCollector != nil else {
+      return
+    }
 
     isRefreshing = true
     defer { isRefreshing = false }
@@ -185,7 +260,12 @@ final class UsageStore {
     await refreshLocalState(refreshID: correlationID)
 
     guard !collectors.isEmpty else {
-      logRefreshCompleted(correlationID: correlationID, startedAt: startedAt, anySucceeded: false)
+      let localSucceeded = lastConversationsUpdated != nil || lastBrainUpdated != nil
+      logRefreshCompleted(
+        correlationID: correlationID,
+        startedAt: startedAt,
+        anySucceeded: localSucceeded
+      )
       return
     }
 
@@ -289,7 +369,7 @@ extension UsageStore {
     let resolvedLogger = logger ?? StructuredLogger(clock: clock)
 
     switch config.mode {
-    case .live, .isolated:
+    case .live:
       let cliEnvironment = CLIEnvironment(config: config)
       return UsageStore(
         collectors: [
@@ -297,6 +377,26 @@ extension UsageStore {
           GeminiCollector(cliEnvironment: cliEnvironment, clock: clock),
         ],
         conversationCollector: ActiveConversationCollector(config: config, clock: clock),
+        brainCollector: BrainStateCollector(config: config, clock: clock),
+        clock: clock,
+        logger: resolvedLogger,
+        refreshInterval: config.refreshInterval,
+        cacheTTL: config.cacheTTL,
+        startPeriodicRefresh: true
+      )
+    case .isolated:
+      let cliEnvironment = CLIEnvironment(config: config)
+      return UsageStore(
+        collectors: [
+          ClaudeCollector(cliEnvironment: cliEnvironment, clock: clock),
+          GeminiCollector(cliEnvironment: cliEnvironment, clock: clock),
+        ],
+        conversationCollector: ActiveConversationCollector(config: config, clock: clock),
+        brainCollector: BrainStateCollector(
+          config: config,
+          clock: clock,
+          launchctlRunner: EmptyLaunchctlRunner()
+        ),
         clock: clock,
         logger: resolvedLogger,
         refreshInterval: config.refreshInterval,
@@ -307,6 +407,7 @@ extension UsageStore {
       return UsageStore(
         collectors: [],
         conversationCollector: nil,
+        brainCollector: nil,
         clock: clock,
         logger: resolvedLogger,
         refreshInterval: config.refreshInterval,
