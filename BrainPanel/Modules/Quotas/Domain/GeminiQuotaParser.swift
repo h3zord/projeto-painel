@@ -116,6 +116,9 @@ nonisolated enum GeminiQuotaParser {
     }
 
     for line in lines {
+      if line.localizedCaseInsensitiveContains("within each group") {
+        break
+      }
       if isGroupHeader(line), let parsedGroup = makeParsedGroup(from: line) {
         flush()
         currentGroup = parsedGroup
@@ -214,17 +217,27 @@ nonisolated enum GeminiQuotaParser {
   }
 
   private static func formatAtomicWord(_ word: String) -> String {
-    let preservedAcronyms: Set<String> = ["GPT", "AI", "API", "CLI", "LLM", "UI"]
-    if preservedAcronyms.contains(word) {
-      return word
-    }
-    guard word.contains(where: \.isLetter) else {
+    let leading = word.prefix { !$0.isLetter && !$0.isNumber }
+    let remainder = word.dropFirst(leading.count)
+    let trailingReversed = remainder.reversed().prefix { !$0.isLetter && !$0.isNumber }
+    let core = String(remainder.dropLast(trailingReversed.count))
+    let trailing = String(trailingReversed.reversed())
+
+    guard !core.isEmpty else {
       return word
     }
 
-    let lower = word.lowercased()
+    let preservedAcronyms: Set<String> = ["GPT", "AI", "API", "CLI", "LLM", "UI"]
+    if preservedAcronyms.contains(core) {
+      return "\(leading)\(core)\(trailing)"
+    }
+    guard core.contains(where: \.isLetter), core.first?.isNumber != true else {
+      return "\(leading)\(core)\(trailing)"
+    }
+
+    let lower = core.lowercased()
     guard let first = lower.first else { return word }
-    return String(first).uppercased() + lower.dropFirst()
+    return "\(leading)\(String(first).uppercased())\(lower.dropFirst())\(trailing)"
   }
 
   private static func percentage(in line: String) -> Double? {

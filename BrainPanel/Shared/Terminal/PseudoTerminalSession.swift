@@ -14,6 +14,7 @@ nonisolated final class PseudoTerminalSession {
   private let columns: Int
   private let rows: Int
   private let clock: any Clock
+  private let masterCloser: (Int32) -> Int32
   private var buffer = Data()
   private var isMasterClosed = false
 
@@ -24,7 +25,8 @@ nonisolated final class PseudoTerminalSession {
     environment: [String: String],
     clock: any Clock = SystemClock(),
     columns: UInt16 = 120,
-    rows: UInt16 = 50
+    rows: UInt16 = 50,
+    masterCloser: @escaping (Int32) -> Int32 = { Darwin.close($0) }
   ) throws(AppError) {
     var masterDescriptor: Int32 = 0
     var slaveDescriptor: Int32 = 0
@@ -38,6 +40,7 @@ nonisolated final class PseudoTerminalSession {
     self.columns = Int(columns)
     self.rows = Int(rows)
     self.clock = clock
+    self.masterCloser = masterCloser
 
     let terminal = FileHandle(fileDescriptor: slaveDescriptor, closeOnDealloc: true)
     process.executableURL = executable
@@ -51,7 +54,7 @@ nonisolated final class PseudoTerminalSession {
     do {
       try process.run()
     } catch {
-      Darwin.close(masterDescriptor)
+      closeMasterDescriptor()
       throw AppError.terminalUnavailable()
     }
 
@@ -80,6 +83,9 @@ nonisolated final class PseudoTerminalSession {
 
   /// Escreve todos os bytes no descritor mestre do PTY tratando escritas parciais e `EINTR`.
   func send(_ input: String) throws(AppError) {
+    guard !isMasterClosed else {
+      throw AppError.terminalWriteFailed()
+    }
     let bytes = Array(input.utf8)
     let descriptor = master
     try Self.writeAll(bytes) { pointer, count in
@@ -154,6 +160,8 @@ nonisolated final class PseudoTerminalSession {
   /// Envia `SIGTERM`, aguarda o encerramento dentro de uma janela curta e escala para `SIGKILL`
   /// caso o processo filho continue vivo, colhendo o status de saída para não deixar órfãos nem zombies.
   func terminate(gracePeriod: TimeInterval = PseudoTerminalSession.defaultGracePeriodSeconds) {
+    closeMasterDescriptor()
+
     let pid = process.processIdentifier
     guard pid > 0 else { return }
 
@@ -181,10 +189,11 @@ nonisolated final class PseudoTerminalSession {
   private func closeMasterDescriptor() {
     guard !isMasterClosed else { return }
     isMasterClosed = true
-    Darwin.close(master)
+    _ = masterCloser(master)
   }
 
   private func readAvailable(waitingMilliseconds: Int32) -> Bool {
+    guard !isMasterClosed else { return false }
     var descriptor = pollfd(fd: master, events: Int16(POLLIN), revents: 0)
     let ready = poll(&descriptor, 1, waitingMilliseconds)
     if ready < 0 && errno == EINTR {

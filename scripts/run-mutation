@@ -137,6 +137,13 @@ MUTANTS: list[MutantSpec] = [
         original='let allowedPunctuation: Set<Character> = [" ", ".", "-", "/", "&", "+", "_", "(", ")", ":"]',
         replacement='let allowedPunctuation: Set<Character> = [" "]',
     ),
+    MutantSpec(
+        id="M16",
+        relative_file="BrainPanel/Modules/Quotas/Domain/GeminiQuotaParser.swift",
+        description="encerramento da leitura da tabela /quota no rodapé Within each group",
+        original='if line.localizedCaseInsensitiveContains("within each group") {',
+        replacement='if line.localizedCaseInsensitiveContains("__nunca_delimita__") {',
+    ),
 ]
 
 

@@ -76,8 +76,17 @@ final class GeminiQuotaParserTests: XCTestCase {
       Weekly Limit
       5% Refreshes in 1d 2h
 
+      GEMINI 2.5 PRO (PREVIEW)
+      Weekly Limit
+      70% Refreshes in 3d
+
+      OPENAI: (GPT)
+      Weekly Limit
+      80% Refreshes in 5d
+
       Within each group models share quota.
-      Press Esc to return.
+      Context Limit
+      98% context left
       """
 
     let usage = try GeminiQuotaParser.makeUsage(from: screen, now: fixedNow)
@@ -90,6 +99,8 @@ final class GeminiQuotaParserTests: XCTestCase {
         "gemini-2-5-pro-session",
         "gemini-2-5-pro-weekly",
         "gemini-claude-gpt-4-5-sonnet-weekly",
+        "gemini-2-5-pro-preview-weekly",
+        "gemini-openai-gpt-weekly",
       ]
     )
     XCTAssertEqual(
@@ -100,8 +111,12 @@ final class GeminiQuotaParserTests: XCTestCase {
         "Gemini 2.5 Pro",
         "Gemini 2.5 Pro",
         "Claude & GPT-4.5 / Sonnet",
+        "Gemini 2.5 Pro (Preview)",
+        "Openai: (GPT)",
       ]
     )
+    // O texto "Context Limit / 98%" abaixo de "Within each group" não pode sobrescrever o último grupo (20% usado)
+    XCTAssertEqual(usage.limits.last?.usedPercentage, 20)
     // A janela semanal mais consumida é Claude & GPT-4.5 / Sonnet (95% usado, 5% restante)
     XCTAssertEqual(usage.weeklyLimit?.id, "gemini-claude-gpt-4-5-sonnet-weekly")
     XCTAssertEqual(usage.weeklyLimit?.usedPercentage, 95)

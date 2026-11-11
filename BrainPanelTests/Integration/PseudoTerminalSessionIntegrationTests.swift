@@ -154,6 +154,65 @@ final class PseudoTerminalSessionIntegrationTests: XCTestCase {
     XCTAssertFalse(deinitStillAlive, "deinit deveria encerrar o processo filho no PTY sem órfãos")
   }
 
+  func testFailedInitAndTerminateCloseMasterDescriptorExactlyOnceWithoutEBADF() throws {
+    let tempRoot = try makeIsolatedTmpDirectory()
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let nonExecutableURL = tempRoot.appending(path: "nao-executavel.txt")
+    try Data("texto comum".utf8).write(to: nonExecutableURL)
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o644], ofItemAtPath: nonExecutableURL.path)
+
+    var failedInitCloseErrnos: [Int32] = []
+    XCTAssertThrowsError(
+      try PseudoTerminalSession(
+        executable: nonExecutableURL,
+        directory: tempRoot,
+        environment: ["LANG": "en_US.UTF-8", "TERM": "xterm-256color"],
+        masterCloser: { fd in
+          let rc = Darwin.close(fd)
+          failedInitCloseErrnos.append(rc == 0 ? 0 : errno)
+          return rc
+        }
+      )
+    ) { error in
+      let appError = error as? AppError
+      XCTAssertEqual(appError?.code, .terminalUnavailable)
+    }
+    XCTAssertEqual(
+      failedInitCloseErrnos,
+      [0],
+      "Falha em process.run() no init deve fechar o descritor master exatamente 1 vez sem EBADF"
+    )
+
+    // Valida também que terminate() fecha o master exatamente 1 vez, rejeitando send/read posteriores e sem double-close no deinit
+    let scriptURL = tempRoot.appending(path: "short-cli.sh")
+    try Data("#!/bin/sh\nprintf 'OK\\r\\n'\nsleep 2\n".utf8).write(to: scriptURL)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
+
+    var normalCloseErrnos: [Int32] = []
+    do {
+      let session = try PseudoTerminalSession(
+        executable: scriptURL,
+        directory: tempRoot,
+        environment: ["PATH": "/bin:/usr/bin", "LANG": "en_US.UTF-8", "TERM": "xterm-256color"],
+        masterCloser: { fd in
+          let rc = Darwin.close(fd)
+          normalCloseErrnos.append(rc == 0 ? 0 : errno)
+          return rc
+        }
+      )
+      XCTAssertTrue(session.read(timeout: 5.0) { $0.contains("OK") })
+      session.terminate()
+      XCTAssertEqual(normalCloseErrnos, [0], "terminate() deve fechar o master imediatamente")
+      XCTAssertThrowsError(try session.send("depois\r")) { error in
+        XCTAssertEqual((error as? AppError)?.code, .terminalWriteFailed)
+      }
+      XCTAssertFalse(session.read(timeout: 0.2) { _ in false })
+    }
+    XCTAssertEqual(normalCloseErrnos, [0], "deinit após terminate() não pode fechar o master de novo")
+  }
+
   private func makeIsolatedTmpDirectory() throws -> URL {
     let repoRoot = URL(filePath: #filePath)
       .deletingLastPathComponent()
