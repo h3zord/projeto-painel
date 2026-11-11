@@ -131,4 +131,136 @@ final class GeminiQuotaParserTests: XCTestCase {
       XCTAssertEqual(appError?.code, .unexpectedOutputFormat)
     }
   }
+
+  func testParsesAgy155QuotaScreenWithBoxBordersRemainingLabelsAndQuotaAvailable() throws {
+    let screen = """
+      Antigravity CLI 1.5.5 (Google AI Ultra)
+      ────────────────────────────────────────
+      > /quota
+      └ Models & Quota
+      │
+      │ GEMINI 4 CARBON
+      │ Weekly Limit Remaining
+      │ ████████████████░░░░ 84% · Refreshes in 4d 3h
+      │ Five Hour Limit Remaining
+      │ ████████████████████ 100% · Quota available
+      │
+      │ CLAUDE AND GPT MODELS
+      │ Five Hour Limit Remaining
+      │ Quota available
+      │ Weekly Limit Remaining
+      │ ████████████░░░░░░░░ 60% · Refreshes in 2d 5h
+      │
+      │Within each group, models share a weekly limit and a 5-hour limit.
+      ────────────────────────────────────────
+      Auto mode: edits & safe commands auto-approved (shift+tab to cycle)
+      """
+
+    let usage = try GeminiQuotaParser.makeUsage(from: screen, now: fixedNow)
+    XCTAssertEqual(usage.plan, "Google AI Ultra")
+    XCTAssertEqual(
+      usage.limits.map(\.id),
+      [
+        "gemini-4-carbon-session",
+        "gemini-4-carbon-weekly",
+        "gemini-claude-and-gpt-models-session",
+        "gemini-claude-and-gpt-models-weekly",
+      ]
+    )
+    XCTAssertEqual(
+      usage.limits.map(\.name),
+      [
+        "Gemini 4 Carbon",
+        "Gemini 4 Carbon",
+        "Claude e GPT",
+        "Claude e GPT",
+      ]
+    )
+    XCTAssertEqual(
+      usage.limits.map(\.usedPercentage),
+      [0, 16, 0, 40]
+    )
+    XCTAssertNil(usage.limits.first?.resetsAt)
+    XCTAssertEqual(usage.weeklyLimit?.id, "gemini-claude-and-gpt-models-weekly")
+    XCTAssertEqual(usage.weeklyLimit?.usedPercentage, 40)
+    XCTAssertEqual(
+      usage.weeklyLimit?.resetsAt,
+      fixedNow.addingTimeInterval(2 * 86_400 + 5 * 3_600)
+    )
+  }
+
+  func testGeminiStartupEvaluatorRecognizesAgy155ModeFooterBannersAndTrustPrompts() {
+    let transientUnsigned = """
+      Welcome to the Antigravity CLI. You are currently not signed in.
+      Signing in...
+      """
+    XCTAssertEqual(
+      GeminiStartupEvaluator.evaluate(screen: transientUnsigned),
+      .waitForMoreOutput
+    )
+
+    let trustPartial = "Do you trust the contents of this project?"
+    XCTAssertEqual(
+      GeminiStartupEvaluator.evaluate(
+        screen: trustPartial,
+        isFolderTrustPromptSettled: false
+      ),
+      .waitForMoreOutput
+    )
+    XCTAssertEqual(
+      GeminiStartupEvaluator.evaluate(
+        screen: trustPartial,
+        isFolderTrustPromptSettled: true
+      ),
+      .rejectUntrustedPromptFormat
+    )
+
+    let trustFull = """
+      Do you trust the contents of this project?
+      > Yes, I trust this folder
+        No, exit
+      """
+    XCTAssertEqual(
+      GeminiStartupEvaluator.evaluate(screen: trustFull),
+      .confirmTrustedFolder
+    )
+
+    let modalBannerOverFooter = """
+      Introducing Gemini 4 Carbon
+      esc to dismiss
+      Auto mode: edits & safe commands auto-approved (shift+tab to cycle)
+      """
+    XCTAssertEqual(
+      GeminiStartupEvaluator.evaluate(
+        screen: modalBannerOverFooter,
+        hasDismissedBanner: false
+      ),
+      .dismissBanner
+    )
+    XCTAssertEqual(
+      GeminiStartupEvaluator.evaluate(
+        screen: modalBannerOverFooter,
+        hasDismissedBanner: true
+      ),
+      .ready
+    )
+
+    let agy155Ready = """
+      Antigravity CLI 1.5.5 (Google AI Ultra)
+      ────────────────────────────────────────
+      >
+      ────────────────────────────────────────
+      Plan mode: read-only analysis (shift+tab to cycle)
+      """
+    XCTAssertEqual(
+      GeminiStartupEvaluator.evaluate(screen: agy155Ready),
+      .ready
+    )
+
+    let legacyReady = "Antigravity CLI\n? for shortcuts"
+    XCTAssertEqual(
+      GeminiStartupEvaluator.evaluate(screen: legacyReady),
+      .ready
+    )
+  }
 }

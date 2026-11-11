@@ -7,7 +7,7 @@ nonisolated enum TerminalText {
   static func clean(_ data: Data) -> String {
     let cursorMoves = #/\u{1b}\[(\d*)([CG])/#
     let controlSequences =
-      #/\u{1b}\[[0-9;?<>=]*[ -/]*[@-~]|\u{1b}[\]P_][^\u{07}\u{1b}]*(?:\u{07}|\u{1b}\\)|\u{1b}[()][A-Za-z0-9]|\u{1b}[=>78]/#
+      #/\u{1b}\[[0-9;?<>=]*[ -/]*[@-~]|\u{1b}[\]P_][^\u{07}\u{1b}]*(?:\u{07}|\u{1b}\\)|\u{1b}[()][A-Za-z0-9]|\u{1b}[=>78M]/#
     var text = String(decoding: data, as: UTF8.self)
 
     text = text.replacing(cursorMoves) { match in

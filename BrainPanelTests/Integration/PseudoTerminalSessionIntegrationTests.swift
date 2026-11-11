@@ -213,6 +213,186 @@ final class PseudoTerminalSessionIntegrationTests: XCTestCase {
     XCTAssertEqual(normalCloseErrnos, [0], "deinit após terminate() não pode fechar o master de novo")
   }
 
+  func testClosingMasterDescriptorAloneDeliversKernelSIGHUPAndPreventsOrphans() throws {
+    let tempRoot = try makeIsolatedTmpDirectory()
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let pidFileURL = tempRoot.appending(path: "session-pids.txt")
+    let scriptURL = tempRoot.appending(path: "ctty-probe.py")
+    let script = """
+      #!/usr/bin/python3
+      import os, subprocess, sys, time
+
+      sub = subprocess.Popen(
+          ["/usr/bin/python3", "-c", "import time\\nwhile True:\\n    time.sleep(1)\\n"],
+          stdin=subprocess.DEVNULL,
+          stdout=subprocess.DEVNULL,
+          stderr=subprocess.DEVNULL,
+      )
+      ctty_status = "CTTY_MISSING"
+      try:
+          tty_fd = os.open("/dev/tty", os.O_RDWR)
+          os.close(tty_fd)
+          ctty_status = "CTTY_OK"
+      except OSError:
+          ctty_status = "CTTY_MISSING"
+
+      with open(sys.argv[1], "w", encoding="utf-8") as fh:
+          fh.write(f"{os.getpid()}\\n{sub.pid}\\n")
+
+      os.write(1, f"{ctty_status} WAITING_FOR_HUP\\r\\n".encode("utf-8"))
+      while True:
+          time.sleep(1)
+      """
+    try Data(script.utf8).write(to: scriptURL)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
+
+    let session = try PseudoTerminalSession(
+      executable: scriptURL,
+      arguments: [pidFileURL.path],
+      directory: tempRoot,
+      environment: [
+        "PATH": "/usr/bin:/bin",
+        "LANG": "en_US.UTF-8",
+        "TERM": "xterm-256color",
+      ],
+      columns: 80,
+      rows: 24
+    )
+
+    var trackedPIDs: [Int32] = []
+    defer {
+      session.terminate()
+      for pid in trackedPIDs where pid > 0 {
+        _ = Darwin.kill(pid, SIGKILL)
+      }
+    }
+
+    let ready = session.read(timeout: 5.0) { $0.contains("WAITING_FOR_HUP") }
+    XCTAssertTrue(ready, "O script local deveria iniciar e reportar estado de controlling TTY")
+
+    let pidLines = try String(contentsOf: pidFileURL, encoding: .utf8)
+      .split(whereSeparator: \.isNewline)
+      .compactMap { Int32($0) }
+    XCTAssertEqual(pidLines.count, 2)
+    guard pidLines.count == 2, let leaderPID = pidLines.first, let subPID = pidLines.last else {
+      return
+    }
+    trackedPIDs = [leaderPID, subPID]
+
+    XCTAssertTrue(
+      session.text.contains("CTTY_OK"),
+      "O processo filho no PTY precisa adquirir controlling terminal (setsid + TIOCSCTTY)"
+    )
+
+    // Simula encerramento abrupto do processo pai durante session.read: fecha apenas o master sem terminate()
+    session.closeMasterDescriptorWithoutTerminating()
+
+    let leaderExited = waitForProcessExit(pid: leaderPID, maxMilliseconds: 1_500)
+    let subExited = waitForProcessExit(pid: subPID, maxMilliseconds: 1_500)
+
+    XCTAssertTrue(
+      leaderExited,
+      "Fechar apenas o descritor master deveria fazer o kernel entregar SIGHUP imediato ao filho"
+    )
+    XCTAssertTrue(
+      subExited,
+      "Subprocesso no mesmo grupo do controlling TTY também deve encerrar por SIGHUP sem ficar órfão"
+    )
+  }
+
+  func testTerminateKillsEntireProcessGroupWhenChildAndSubprocessIgnoreSIGHUPAndSIGTERM() throws {
+    let tempRoot = try makeIsolatedTmpDirectory()
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let pidFileURL = tempRoot.appending(path: "group-pids.txt")
+    let scriptURL = tempRoot.appending(path: "group-stubborn.py")
+    let script = """
+      #!/usr/bin/python3
+      import os, signal, subprocess, sys, time
+
+      signal.signal(signal.SIGHUP, signal.SIG_IGN)
+      signal.signal(signal.SIGTERM, signal.SIG_IGN)
+
+      child_code = (
+          "import signal, time\\n"
+          "signal.signal(signal.SIGHUP, signal.SIG_IGN)\\n"
+          "signal.signal(signal.SIGTERM, signal.SIG_IGN)\\n"
+          "while True:\\n    time.sleep(1)\\n"
+      )
+      sub = subprocess.Popen(
+          ["/usr/bin/python3", "-c", child_code],
+          stdin=subprocess.DEVNULL,
+          stdout=subprocess.DEVNULL,
+          stderr=subprocess.DEVNULL,
+      )
+      with open(sys.argv[1], "w", encoding="utf-8") as fh:
+          fh.write(f"{os.getpid()}\\n{sub.pid}\\n")
+
+      os.write(1, b"GROUP_READY\\r\\n")
+      while True:
+          time.sleep(1)
+      """
+    try Data(script.utf8).write(to: scriptURL)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
+
+    let session = try PseudoTerminalSession(
+      executable: scriptURL,
+      arguments: [pidFileURL.path],
+      directory: tempRoot,
+      environment: [
+        "PATH": "/usr/bin:/bin",
+        "LANG": "en_US.UTF-8",
+        "TERM": "xterm-256color",
+      ],
+      columns: 80,
+      rows: 24
+    )
+
+    var trackedPIDs: [Int32] = []
+    defer {
+      for pid in trackedPIDs where pid > 0 {
+        _ = Darwin.kill(pid, SIGKILL)
+      }
+    }
+
+    XCTAssertTrue(session.read(timeout: 5.0) { $0.contains("GROUP_READY") })
+    let pidLines = try String(contentsOf: pidFileURL, encoding: .utf8)
+      .split(whereSeparator: \.isNewline)
+      .compactMap { Int32($0) }
+    XCTAssertEqual(pidLines.count, 2)
+    guard pidLines.count == 2, let leaderPID = pidLines.first, let subPID = pidLines.last else {
+      return
+    }
+    trackedPIDs = [leaderPID, subPID]
+
+    session.terminate()
+
+    let leaderDead = waitForProcessExit(pid: leaderPID, maxMilliseconds: 500)
+    let subDead = waitForProcessExit(pid: subPID, maxMilliseconds: 500)
+    XCTAssertTrue(leaderDead, "Líder do grupo deveria ter sido encerrado por terminate()")
+    XCTAssertTrue(
+      subDead,
+      "Subprocesso no mesmo grupo ignorando SIGHUP/SIGTERM deveria ter sido encerrado por kill(-pid, SIGKILL)"
+    )
+  }
+
+  private func waitForProcessExit(pid: Int32, maxMilliseconds: Int) -> Bool {
+    let steps = max(maxMilliseconds / 10, 1)
+    for _ in 0..<steps {
+      var status: Int32 = 0
+      let reaped = waitpid(pid, &status, WNOHANG)
+      if reaped == pid {
+        return true
+      }
+      if Darwin.kill(pid, 0) != 0 && errno == ESRCH {
+        return true
+      }
+      usleep(10_000)
+    }
+    return Darwin.kill(pid, 0) != 0 && errno == ESRCH
+  }
+
   private func makeIsolatedTmpDirectory() throws -> URL {
     let repoRoot = URL(filePath: #filePath)
       .deletingLastPathComponent()

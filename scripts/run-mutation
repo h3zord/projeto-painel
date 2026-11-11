@@ -326,6 +326,34 @@ MUTANTS: list[MutantSpec] = [
         original="config.mode == .live && config.notificationsEnabled",
         replacement="config.mode == .live || config.notificationsEnabled",
     ),
+    MutantSpec(
+        id="M43",
+        relative_file="BrainPanel/Modules/Quotas/Domain/GeminiStartupEvaluator.swift",
+        description="detecção de prontidão do seletor de modo shift+tab to cycle no agy 1.5.5+",
+        original='static let modeCycleReadyMarker = "shift+tab to cycle"',
+        replacement='static let modeCycleReadyMarker = "__nunca_pronto_155__"',
+    ),
+    MutantSpec(
+        id="M44",
+        relative_file="BrainPanel/Modules/Quotas/Domain/GeminiStartupEvaluator.swift",
+        description="dispensa prioritária de banner modal esc to dismiss antes de considerar prompt pronto",
+        original="if !hasDismissedBanner && hasDismissibleBanner(in: screen) {",
+        replacement="if hasDismissedBanner && hasDismissibleBanner(in: screen) {",
+    ),
+    MutantSpec(
+        id="M45",
+        relative_file="BrainPanel/Shared/Terminal/TerminalScreen.swift",
+        description="movimentação vertical para cima em ESC M (Reverse Index) em TerminalScreen",
+        original="row = max(row - 1, 0)",
+        replacement="row = max(row - 0, 0)",
+    ),
+    MutantSpec(
+        id="M46",
+        relative_file="BrainPanel/Modules/Quotas/Domain/GeminiQuotaParser.swift",
+        description="reconhecimento de Quota available como 100% restante no formato agy 1.5.5+",
+        original='line.localizedCaseInsensitiveContains("quota available")\n      {\n        remaining = 100',
+        replacement='line.localizedCaseInsensitiveContains("quota available")\n      {\n        remaining = 0',
+    ),
 ]
 
 

@@ -84,6 +84,14 @@ nonisolated enum GeminiQuotaParser {
     )
   }
 
+  private static let lineDecorationCharacters: CharacterSet = {
+    var characters = CharacterSet.whitespaces
+    if let boxStart = Unicode.Scalar(0x2500), let boxEnd = Unicode.Scalar(0x257F) {
+      characters.insert(charactersIn: boxStart...boxEnd)
+    }
+    return characters
+  }()
+
   private static func entries(in screen: String, now: Date) -> [Entry] {
     guard let start = screen.range(of: "Models & Quota", options: .backwards) else {
       return []
@@ -91,7 +99,7 @@ nonisolated enum GeminiQuotaParser {
 
     let lines = screen[start.upperBound...]
       .split(separator: "\n")
-      .map { $0.trimmingCharacters(in: .whitespaces) }
+      .map { $0.trimmingCharacters(in: lineDecorationCharacters) }
       .filter { !$0.isEmpty }
 
     var collected: [Entry] = []
@@ -122,12 +130,24 @@ nonisolated enum GeminiQuotaParser {
       if isGroupHeader(line), let parsedGroup = makeParsedGroup(from: line) {
         flush()
         currentGroup = parsedGroup
-      } else if line.contains("Limit"), !line.contains("%") {
+      } else if line.contains("Limit") {
         flush()
         label = line
+        if let value = percentage(in: line) {
+          remaining = value
+          resetsAt = resetDate(in: line, now: now)
+        } else if line.localizedCaseInsensitiveContains("quota available") {
+          remaining = 100
+          resetsAt = nil
+        }
       } else if label != nil, remaining == nil, let value = percentage(in: line) {
         remaining = value
         resetsAt = resetDate(in: line, now: now)
+      } else if label != nil, remaining == nil,
+        line.localizedCaseInsensitiveContains("quota available")
+      {
+        remaining = 100
+        resetsAt = nil
       } else if remaining != nil, resetsAt == nil {
         resetsAt = resetDate(in: line, now: now)
       }
