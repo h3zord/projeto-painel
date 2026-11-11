@@ -1,0 +1,17 @@
+{
+  "pid": 41004,
+  "project": "projeto-painel",
+  "role": "dev",
+  "session": "painel-dev",
+  "cmd": "make ci",
+  "commit": "82ac8dd",
+  "queued": 1762819700.0,
+  "started": 1762819710.0,
+  "claimed": null,
+  "folder": "projeto-painel",
+  "type": "ci",
+  "dur_est": 42.0,
+  "mem_est": 512.0,
+  "solo": false,
+  "waits": {}
+}

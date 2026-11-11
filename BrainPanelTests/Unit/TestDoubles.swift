@@ -145,3 +145,26 @@ nonisolated final class StubConversationCollector: ConversationCollecting, @unch
     return try next.get()
   }
 }
+
+nonisolated final class StubBrainStateCollector: BrainStateCollecting, @unchecked Sendable {
+  private let lock = NSLock()
+  private var queuedResults: [Result<BrainSnapshot, any Error>]
+  private(set) var callCount = 0
+
+  init(results: [Result<BrainSnapshot, any Error>]) {
+    self.queuedResults = results
+  }
+
+  func fetchBrainState() async throws -> BrainSnapshot {
+    let next: Result<BrainSnapshot, any Error> = {
+      lock.lock()
+      defer { lock.unlock() }
+      callCount += 1
+      if queuedResults.count > 1 {
+        return queuedResults.removeFirst()
+      }
+      return queuedResults.first ?? .success(.empty)
+    }()
+    return try next.get()
+  }
+}

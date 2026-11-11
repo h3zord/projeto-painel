@@ -30,6 +30,20 @@ final class AppConfigAndErrorTests: XCTestCase {
       config.brainSessionsStateDirectory.path,
       "/Users/teste/.local/state/brain-sessions"
     )
+    XCTAssertEqual(config.brainStateDirectory.path, "/Users/teste/.local/state")
+    XCTAssertEqual(
+      config.brainPendingStateDirectory.path,
+      "/Users/teste/.local/state/brain-pending"
+    )
+    XCTAssertEqual(config.brainMailStateDirectory.path, "/Users/teste/.local/state/brain-mail")
+    XCTAssertEqual(config.brainCIStateDirectory.path, "/Users/teste/.local/state/brain-ci")
+    XCTAssertEqual(config.brainWeeklyStateDirectory.path, "/Users/teste/.local/state/brain-weekly")
+    XCTAssertEqual(config.logsDirectory.path, "/Users/teste/Library/Logs")
+    XCTAssertEqual(config.launchAgentsDirectory.path, "/Users/teste/Library/LaunchAgents")
+    XCTAssertEqual(
+      config.backupProgressFileURL.path,
+      "/Users/teste/Brain/local/pages/backup-drive.json"
+    )
     XCTAssertEqual(config.childCLIEnvironment["LANG"], "en_US.UTF-8")
     XCTAssertEqual(config.childCLIEnvironment["TERM"], "xterm-256color")
   }
@@ -49,6 +63,10 @@ final class AppConfigAndErrorTests: XCTestCase {
     XCTAssertFalse(config.claudeContextCacheDirectory.path.contains("/Users/teste/.cache"))
     XCTAssertFalse(config.antigravityDirectory.path.contains("/Users/teste/.gemini"))
     XCTAssertFalse(config.brainSessionsStateDirectory.path.contains("/Users/teste/.local/state"))
+    XCTAssertFalse(config.brainStateDirectory.path.contains("/Users/teste/.local/state"))
+    XCTAssertFalse(config.logsDirectory.path.contains("/Users/teste/Library/Logs"))
+    XCTAssertFalse(config.launchAgentsDirectory.path.contains("/Users/teste/Library/LaunchAgents"))
+    XCTAssertFalse(config.backupProgressFileURL.path.contains("/Users/teste/Brain"))
     XCTAssertEqual(config.cliSearchPaths, ["/tmp/brain-panel-tests/brain-panel-isolated/empty-bin"])
   }
 
@@ -97,6 +115,22 @@ final class AppConfigAndErrorTests: XCTestCase {
       expectedSetting: "BRAIN_PANEL_BRAIN_SESSIONS_STATE_DIR"
     )
     assertConfigFails(
+      environment: ["BRAIN_PANEL_BRAIN_STATE_DIR": "relativo/local-state"],
+      expectedSetting: "BRAIN_PANEL_BRAIN_STATE_DIR"
+    )
+    assertConfigFails(
+      environment: ["BRAIN_PANEL_LOGS_DIR": "/tmp/../Logs"],
+      expectedSetting: "BRAIN_PANEL_LOGS_DIR"
+    )
+    assertConfigFails(
+      environment: ["BRAIN_PANEL_LAUNCH_AGENTS_DIR": "LaunchAgents"],
+      expectedSetting: "BRAIN_PANEL_LAUNCH_AGENTS_DIR"
+    )
+    assertConfigFails(
+      environment: ["BRAIN_PANEL_BACKUP_PROGRESS_FILE": "/tmp/../backup-drive.json"],
+      expectedSetting: "BRAIN_PANEL_BACKUP_PROGRESS_FILE"
+    )
+    assertConfigFails(
       environment: ["BRAIN_PANEL_CLI_SEARCH_PATHS": "/usr/bin:relativo"],
       expectedSetting: "BRAIN_PANEL_CLI_SEARCH_PATHS"
     )
@@ -120,6 +154,10 @@ final class AppConfigAndErrorTests: XCTestCase {
       AppError.untrustedPromptFormat(provider: .gemini),
       AppError.unexpectedOutputFormat(provider: .claude),
       AppError.transcriptReadFailed(),
+      AppError.brainStateReadFailed(section: .waiting),
+      AppError.brainStateReadFailed(section: .ciQueue),
+      AppError.brainStateReadFailed(section: .healthAndBackup),
+      AppError.brainStateReadFailed(section: .scheduledJobs),
       ErrorHandler.normalize(UnknownTestFailure()),
     ]
 

@@ -1,0 +1,17 @@
+{
+  "at": 1762700000,
+  "jobs": [
+    {
+      "project": "projeto-painel",
+      "cmd": "make mutation",
+      "ran": true,
+      "exit": 0
+    },
+    {
+      "project": "flexograv-erp",
+      "cmd": "CMD-CORPORATIVO-WEEKLY",
+      "ran": true,
+      "exit": 0
+    }
+  ]
+}

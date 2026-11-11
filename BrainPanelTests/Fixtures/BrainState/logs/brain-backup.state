@@ -1,0 +1,9 @@
+{
+  "result": "ok",
+  "reason": "",
+  "at": 1762819000,
+  "snapshot": "a1b2c3d4",
+  "added": 104857600,
+  "files": 42,
+  "pruned": 1762700000
+}

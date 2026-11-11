@@ -5,7 +5,8 @@ Valida:
 1. Info.plist presente com CFBundleIdentifier == com.h3zord.BrainPanel e LSUIElement ativo.
 2. Binário Contents/MacOS/Brain Panel presente e executável.
 3. Autoverificação de inicialização (BRAIN_PANEL_MODE=self_check) em diretório isolado em local/tmp/,
-   sem acionar CLIs reais (claude/agy) nem ler ~/.claude, ~/.cache, ~/.gemini ou ~/.local/state.
+   sem acionar CLIs reais (claude/agy/launchctl) nem ler ~/.claude, ~/.cache, ~/.gemini, ~/.local/state,
+   ~/Library/Logs, ~/Library/LaunchAgents ou ~/Brain.
 4. Falha fechada (exit != 0) diante de configuração inválida no boot, sem vazar canário no log.
 """
 
@@ -64,7 +65,11 @@ def main(argv: list[str]) -> int:
     projects_dir = isolated_dir / "projects"
     context_cache_dir = isolated_dir / "claude-context"
     antigravity_dir = isolated_dir / "antigravity-cli"
+    brain_state_dir = isolated_dir / "brain-state"
     brain_sessions_dir = isolated_dir / "brain-sessions"
+    logs_dir = isolated_dir / "logs"
+    launch_agents_dir = isolated_dir / "launch-agents"
+    pages_dir = isolated_dir / "pages"
     support_dir = isolated_dir / "support"
     empty_bin = isolated_dir / "empty-bin"
     fake_home = isolated_dir / "home"
@@ -73,7 +78,11 @@ def main(argv: list[str]) -> int:
         projects_dir,
         context_cache_dir,
         antigravity_dir,
+        brain_state_dir,
         brain_sessions_dir,
+        logs_dir,
+        launch_agents_dir,
+        pages_dir,
         support_dir,
         empty_bin,
         fake_home,
@@ -88,7 +97,11 @@ def main(argv: list[str]) -> int:
         "BRAIN_PANEL_CLAUDE_PROJECTS_DIR": str(projects_dir),
         "BRAIN_PANEL_CLAUDE_CONTEXT_CACHE_DIR": str(context_cache_dir),
         "BRAIN_PANEL_ANTIGRAVITY_DIR": str(antigravity_dir),
+        "BRAIN_PANEL_BRAIN_STATE_DIR": str(brain_state_dir),
         "BRAIN_PANEL_BRAIN_SESSIONS_STATE_DIR": str(brain_sessions_dir),
+        "BRAIN_PANEL_LOGS_DIR": str(logs_dir),
+        "BRAIN_PANEL_LAUNCH_AGENTS_DIR": str(launch_agents_dir),
+        "BRAIN_PANEL_BACKUP_PROGRESS_FILE": str(pages_dir / "backup-drive.json"),
         "BRAIN_PANEL_APP_SUPPORT_DIR": str(support_dir),
         "BRAIN_PANEL_CLI_SEARCH_PATHS": str(empty_bin),
     }

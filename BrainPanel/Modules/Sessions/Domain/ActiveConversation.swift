@@ -143,7 +143,7 @@ nonisolated struct ActiveConversation: Identifiable, Equatable, Sendable {
     if isCompacted {
       if let compactedAt, let now {
         return
-          "Compactou \(Self.relativeElapsedSummary(since: compactedAt, now: now)) · tamanho volta no próximo turno"
+          "Compactou \(RelativeTimeFormatter.elapsedPhrase(since: compactedAt, now: now)) · tamanho volta no próximo turno"
       }
       return "Compactou · tamanho volta no próximo turno"
     }
@@ -225,25 +225,6 @@ nonisolated struct ActiveConversation: Identifiable, Equatable, Sendable {
       return 0
     }
     return 2
-  }
-
-  private static func relativeElapsedSummary(since timestamp: Date, now: Date) -> String {
-    let elapsedSeconds = max(Int(now.timeIntervalSince(timestamp)), 0)
-    let totalMinutes = elapsedSeconds / 60
-    let days = totalMinutes / 1_440
-    let hours = (totalMinutes % 1_440) / 60
-    let minutes = totalMinutes % 60
-
-    if days > 0 {
-      return "há \(days)d \(hours)h"
-    }
-    if hours > 0 {
-      return "há \(hours)h \(minutes)m"
-    }
-    if minutes > 0 {
-      return "há \(minutes)m"
-    }
-    return "há instantes"
   }
 
   static let previewData: [ActiveConversation] = [
