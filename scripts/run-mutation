@@ -49,9 +49,9 @@ MUTANTS: list[MutantSpec] = [
     MutantSpec(
         id="M03",
         relative_file="BrainPanel/Modules/Quotas/Domain/ProviderUsage.swift",
-        description="weeklyLimit do Gemini ignora preferência por Argon",
-        original='let argonWeekly = limits.first(where: { $0.id == "gemini-argon-weekly" && $0.window == .weekly })',
-        replacement='let argonWeekly = limits.first(where: { $0.id == "inexistente" && $0.window == .weekly })',
+        description="weeklyLimit inverte comparação de janela semanal mais consumida",
+        original=".filter { $0.window == .weekly }\n      .max { $0.usedPercentage < $1.usedPercentage }",
+        replacement=".filter { $0.window == .weekly }\n      .min { $0.usedPercentage < $1.usedPercentage }",
     ),
     MutantSpec(
         id="M04",
@@ -77,9 +77,9 @@ MUTANTS: list[MutantSpec] = [
     MutantSpec(
         id="M07",
         relative_file="BrainPanel/Modules/Quotas/Application/UsageCollector.swift",
-        description="preservação da última leitura ativa quando atualização falha",
-        original="if providers[index].sessionState == .active {",
-        replacement="if providers[index].sessionState != .active {",
+        description="preservação da última leitura válida em modo stale quando atualização falha",
+        original="if providers[index].sessionState.hasUsableQuota {",
+        replacement="if !providers[index].sessionState.hasUsableQuota {",
     ),
     MutantSpec(
         id="M08",
@@ -108,6 +108,41 @@ MUTANTS: list[MutantSpec] = [
         description="bloqueio de segmentos '..' em caminhos de configuração",
         original='guard !segments.contains("..") else {',
         replacement='guard !segments.contains("__nunca__") else {',
+    ),
+    MutantSpec(
+        id="M12",
+        relative_file="BrainPanel/Modules/Quotas/Domain/ProviderUsage.swift",
+        description="consideração de leitura stale como cota utilizável em menuBarLabel e falhas seguidas",
+        original="case .active, .stale:\n      true",
+        replacement="case .active:\n      true\n    case .stale:\n      false",
+    ),
+    MutantSpec(
+        id="M13",
+        relative_file="BrainPanel/Modules/Quotas/Domain/ProviderUsage.swift",
+        description="preservação do instante original da última leitura válida ao entrar em stale",
+        original="let preservedTimestamp = staleLastUpdatedAt ?? lastUpdatedAt ?? fallbackDate",
+        replacement="let preservedTimestamp = fallbackDate",
+    ),
+    MutantSpec(
+        id="M14",
+        relative_file="BrainPanel/Modules/Quotas/Domain/GeminiQuotaParser.swift",
+        description="ordenação de janela .session antes de .weekly dentro de cada grupo dinâmico",
+        original="lhs.window == .session && rhs.window == .weekly",
+        replacement="lhs.window == .weekly && rhs.window == .session",
+    ),
+    MutantSpec(
+        id="M15",
+        relative_file="BrainPanel/Modules/Quotas/Domain/GeminiQuotaParser.swift",
+        description="aceitação de cabeçalhos de grupo dinâmicos com pontuação na tela /quota",
+        original='let allowedPunctuation: Set<Character> = [" ", ".", "-", "/", "&", "+", "_", "(", ")", ":"]',
+        replacement='let allowedPunctuation: Set<Character> = [" "]',
+    ),
+    MutantSpec(
+        id="M16",
+        relative_file="BrainPanel/Modules/Quotas/Domain/GeminiQuotaParser.swift",
+        description="encerramento da leitura da tabela /quota no rodapé Within each group",
+        original='if line.localizedCaseInsensitiveContains("within each group") {',
+        replacement='if line.localizedCaseInsensitiveContains("__nunca_delimita__") {',
     ),
 ]
 

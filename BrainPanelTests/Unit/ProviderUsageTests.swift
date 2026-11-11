@@ -56,7 +56,7 @@ final class ProviderUsageTests: XCTestCase {
     XCTAssertEqual(provider.sessionLimit?.remainingPercentage, 25)
   }
 
-  func testGeminiWeeklyLimitPrefersArgonWindow() {
+  func testWeeklyLimitPicksMostConsumedWeeklyWindowUniformlyAcrossGroups() {
     let provider = ProviderUsage(
       id: "gemini",
       name: "Gemini",
@@ -67,15 +67,15 @@ final class ProviderUsageTests: XCTestCase {
       limits: [
         UsageLimit(
           id: "gemini-argon-weekly",
-          name: "Argon",
+          name: "Gemini 4 Argon",
           detail: "Semanal",
           window: .weekly,
           usedPercentage: 30,
           resetsAt: nil
         ),
         UsageLimit(
-          id: "gemini-claude-gpt-weekly",
-          name: "Claude e GPT",
+          id: "gemini-4-carbon-weekly",
+          name: "Gemini 4 Carbon",
           detail: "Semanal",
           window: .weekly,
           usedPercentage: 85,
@@ -84,8 +84,9 @@ final class ProviderUsageTests: XCTestCase {
       ]
     )
 
-    XCTAssertEqual(provider.weeklyLimit?.id, "gemini-argon-weekly")
-    XCTAssertEqual(provider.weeklyLimit?.usedPercentage, 30)
+    XCTAssertEqual(provider.weeklyLimit?.id, "gemini-4-carbon-weekly")
+    XCTAssertEqual(provider.weeklyLimit?.usedPercentage, 85)
+    XCTAssertEqual(provider.weeklyLimit?.remainingPercentage, 15)
   }
 
   func testUnavailableResetsLimitsAndExposesReason() {
@@ -95,11 +96,60 @@ final class ProviderUsageTests: XCTestCase {
       return
     }
     XCTAssertNil(active.unavailableReason)
+    XCTAssertNil(active.staleReason)
+    XCTAssertTrue(active.sessionState.hasUsableQuota)
+    XCTAssertFalse(active.sessionState.isStale)
     XCTAssertEqual(active.sessionState.label, "Sessão ativa")
 
     let degraded = active.unavailable("CLI ausente")
     XCTAssertEqual(degraded.unavailableReason, "CLI ausente")
+    XCTAssertFalse(degraded.sessionState.hasUsableQuota)
     XCTAssertEqual(degraded.sessionState.label, "Indisponível")
     XCTAssertTrue(degraded.limits.isEmpty)
+  }
+
+  func testStalePreservesLimitsAndOriginalTimestampAndFormatsAgeDeterministically() {
+    let capturedAt = Date(timeIntervalSince1970: 1_762_819_200)
+    guard let active = ProviderUsage.makePreviewData(now: capturedAt).first else {
+      XCTFail("Preview data ausente")
+      return
+    }
+
+    let firstFailureAt = capturedAt.addingTimeInterval(300)
+    let firstStale = active.stale(reason: "Tempo esgotado", fallbackDate: firstFailureAt)
+    XCTAssertTrue(firstStale.sessionState.hasUsableQuota)
+    XCTAssertTrue(firstStale.sessionState.isStale)
+    XCTAssertEqual(firstStale.sessionState.label, "Leitura defasada")
+    XCTAssertEqual(firstStale.staleReason, "Tempo esgotado")
+    XCTAssertEqual(firstStale.staleLastUpdatedAt, capturedAt)
+    XCTAssertEqual(firstStale.limits, active.limits)
+
+    let secondFailureAt = capturedAt.addingTimeInterval(900)
+    let secondStale = firstStale.stale(reason: "CLI indisponível", fallbackDate: secondFailureAt)
+    XCTAssertEqual(secondStale.staleReason, "CLI indisponível")
+    XCTAssertEqual(secondStale.staleLastUpdatedAt, capturedAt)
+
+    XCTAssertEqual(
+      ProviderUsage.staleAgeSummary(since: capturedAt, now: capturedAt.addingTimeInterval(30)),
+      "Última leitura válida há instantes"
+    )
+    XCTAssertEqual(
+      ProviderUsage.staleAgeSummary(since: capturedAt, now: capturedAt.addingTimeInterval(5 * 60)),
+      "Última leitura válida há 5m"
+    )
+    XCTAssertEqual(
+      ProviderUsage.staleAgeSummary(
+        since: capturedAt,
+        now: capturedAt.addingTimeInterval(2 * 3_600 + 15 * 60)
+      ),
+      "Última leitura válida há 2h 15m"
+    )
+    XCTAssertEqual(
+      ProviderUsage.staleAgeSummary(
+        since: capturedAt,
+        now: capturedAt.addingTimeInterval(27 * 3_600)
+      ),
+      "Última leitura válida há 1d 3h"
+    )
   }
 }

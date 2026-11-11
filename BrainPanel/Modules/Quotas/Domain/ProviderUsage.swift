@@ -8,10 +8,41 @@ nonisolated struct ProviderUsage: Identifiable, Equatable, Sendable {
   let tint: ProviderTint
   let sessionState: SessionState
   let limits: [UsageLimit]
+  let lastUpdatedAt: Date?
+
+  init(
+    id: String,
+    name: String,
+    plan: String,
+    icon: ProviderIcon,
+    tint: ProviderTint,
+    sessionState: SessionState,
+    limits: [UsageLimit],
+    lastUpdatedAt: Date? = nil
+  ) {
+    self.id = id
+    self.name = name
+    self.plan = plan
+    self.icon = icon
+    self.tint = tint
+    self.sessionState = sessionState
+    self.limits = limits
+    self.lastUpdatedAt = lastUpdatedAt
+  }
 
   var unavailableReason: String? {
     guard case .unavailable(let reason) = sessionState else { return nil }
     return reason
+  }
+
+  var staleReason: String? {
+    guard case .stale(let reason, _) = sessionState else { return nil }
+    return reason
+  }
+
+  var staleLastUpdatedAt: Date? {
+    guard case .stale(_, let timestamp) = sessionState else { return nil }
+    return timestamp
   }
 
   /// O cartão de resumo mostra a janela de 5 horas mais consumida entre os grupos.
@@ -21,18 +52,38 @@ nonisolated struct ProviderUsage: Identifiable, Equatable, Sendable {
       .max { $0.usedPercentage < $1.usedPercentage }
   }
 
-  /// No Gemini exibe a janela semanal de Argon quando disponível; nos demais, a mais consumida.
+  /// O cartão de resumo mostra a janela semanal mais consumida entre os grupos.
   var weeklyLimit: UsageLimit? {
-    if id == KnownProviderID.gemini.rawValue,
-      let argonWeekly = limits.first(where: { $0.id == "gemini-argon-weekly" && $0.window == .weekly })
-    {
-      return argonWeekly
-    }
-
-    return
-      limits
+    limits
       .filter { $0.window == .weekly }
       .max { $0.usedPercentage < $1.usedPercentage }
+  }
+
+  func recordingValidReading(at timestamp: Date) -> ProviderUsage {
+    ProviderUsage(
+      id: id,
+      name: name,
+      plan: plan,
+      icon: icon,
+      tint: tint,
+      sessionState: .active,
+      limits: limits,
+      lastUpdatedAt: timestamp
+    )
+  }
+
+  func stale(reason: String, fallbackDate: Date) -> ProviderUsage {
+    let preservedTimestamp = staleLastUpdatedAt ?? lastUpdatedAt ?? fallbackDate
+    return ProviderUsage(
+      id: id,
+      name: name,
+      plan: plan,
+      icon: icon,
+      tint: tint,
+      sessionState: .stale(reason: reason, lastUpdatedAt: preservedTimestamp),
+      limits: limits,
+      lastUpdatedAt: preservedTimestamp
+    )
   }
 
   func unavailable(_ reason: String) -> ProviderUsage {
@@ -43,8 +94,28 @@ nonisolated struct ProviderUsage: Identifiable, Equatable, Sendable {
       icon: icon,
       tint: tint,
       sessionState: .unavailable(reason),
-      limits: []
+      limits: [],
+      lastUpdatedAt: nil
     )
+  }
+
+  static func staleAgeSummary(since lastUpdatedAt: Date, now: Date) -> String {
+    let elapsedSeconds = max(Int(now.timeIntervalSince(lastUpdatedAt)), 0)
+    let totalMinutes = elapsedSeconds / 60
+    let days = totalMinutes / 1_440
+    let hours = (totalMinutes % 1_440) / 60
+    let minutes = totalMinutes % 60
+
+    if days > 0 {
+      return "Última leitura válida há \(days)d \(hours)h"
+    }
+    if hours > 0 {
+      return "Última leitura válida há \(hours)h \(minutes)m"
+    }
+    if minutes > 0 {
+      return "Última leitura válida há \(minutes)m"
+    }
+    return "Última leitura válida há instantes"
   }
 }
 
@@ -93,12 +164,31 @@ nonisolated struct UsageLimit: Identifiable, Equatable, Sendable {
 
 nonisolated enum SessionState: Equatable, Sendable {
   case active
+  case stale(reason: String, lastUpdatedAt: Date)
   case unavailable(String)
+
+  var hasUsableQuota: Bool {
+    switch self {
+    case .active, .stale:
+      true
+    case .unavailable:
+      false
+    }
+  }
+
+  var isStale: Bool {
+    if case .stale = self {
+      return true
+    }
+    return false
+  }
 
   var label: String {
     switch self {
     case .active:
       "Sessão ativa"
+    case .stale:
+      "Leitura defasada"
     case .unavailable:
       "Indisponível"
     }
@@ -158,7 +248,8 @@ nonisolated extension ProviderUsage {
             usedPercentage: 27,
             resetsAt: now.addingTimeInterval(5 * 24 * 60 * 60)
           ),
-        ]
+        ],
+        lastUpdatedAt: now
       ),
       ProviderUsage(
         id: KnownProviderID.gemini.rawValue,
@@ -169,31 +260,31 @@ nonisolated extension ProviderUsage {
         sessionState: .active,
         limits: [
           UsageLimit(
-            id: "gemini-argon-weekly",
-            name: "Argon",
+            id: "gemini-4-carbon-weekly",
+            name: "Gemini 4 Carbon",
             detail: "Semanal",
             window: .weekly,
             usedPercentage: 84,
             resetsAt: now.addingTimeInterval(46 * 60 * 60 + 47 * 60)
           ),
           UsageLimit(
-            id: "gemini-flash-session",
-            name: "Flash",
+            id: "gemini-2-5-pro-session",
+            name: "Gemini 2.5 Pro",
             detail: "Sessão de 5 horas",
             window: .session,
             usedPercentage: 0,
             resetsAt: nil
           ),
           UsageLimit(
-            id: "gemini-flash-weekly",
-            name: "Flash",
+            id: "gemini-2-5-pro-weekly",
+            name: "Gemini 2.5 Pro",
             detail: "Semanal",
             window: .weekly,
             usedPercentage: 1,
             resetsAt: now.addingTimeInterval(51 * 60 * 60 + 44 * 60)
           ),
           UsageLimit(
-            id: "gemini-claude-gpt-session",
+            id: "gemini-claude-and-gpt-models-session",
             name: "Claude e GPT",
             detail: "Sessão de 5 horas",
             window: .session,
@@ -201,14 +292,15 @@ nonisolated extension ProviderUsage {
             resetsAt: now.addingTimeInterval(4 * 60 * 60 + 24 * 60)
           ),
           UsageLimit(
-            id: "gemini-claude-gpt-weekly",
+            id: "gemini-claude-and-gpt-models-weekly",
             name: "Claude e GPT",
             detail: "Semanal",
             window: .weekly,
             usedPercentage: 41,
             resetsAt: now.addingTimeInterval(167 * 60 * 60 + 24 * 60)
           ),
-        ]
+        ],
+        lastUpdatedAt: now
       ),
     ]
   }

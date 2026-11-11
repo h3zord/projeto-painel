@@ -1,39 +1,14 @@
 import Foundation
 
-/// Extrai grupos de cota da tela `/quota` do Antigravity (`agy`) sem realizar I/O.
+/// Extrai dinamicamente grupos de cota da tela `/quota` do Antigravity (`agy`) sem realizar I/O.
 nonisolated enum GeminiQuotaParser {
-  private enum ModelGroup: String, CaseIterable {
-    case argon
-    case flash
-    case claudeAndGPT = "claude-gpt"
-
-    var displayName: String {
-      switch self {
-      case .argon:
-        "Argon"
-      case .flash:
-        "Flash"
-      case .claudeAndGPT:
-        "Claude e GPT"
-      }
-    }
-
-    static func matching(header: String) -> ModelGroup? {
-      if header.contains("ARGON") {
-        return .argon
-      }
-      if header == "GEMINI MODELS" || header.contains("FLASH") {
-        return .flash
-      }
-      if header.contains("CLAUDE") || header.contains("GPT") {
-        return .claudeAndGPT
-      }
-      return nil
-    }
+  private struct ParsedGroup: Equatable {
+    let idPrefix: String
+    let displayName: String
   }
 
   private struct Entry {
-    let group: ModelGroup
+    let group: ParsedGroup
     let window: LimitWindow
     let remaining: Double
     let resetsAt: Date?
@@ -45,22 +20,40 @@ nonisolated enum GeminiQuotaParser {
       throw AppError.unexpectedOutputFormat(provider: .gemini)
     }
 
-    var limits: [UsageLimit] = []
-    for group in ModelGroup.allCases {
-      let groupEntries =
-        parsedEntries
-        .filter { $0.group == group }
-        .sorted { lhs, rhs in
-          lhs.window == .session && rhs.window == .weekly
-        }
+    var orderedGroupIDs: [String] = []
+    var entriesByGroupID: [String: [Entry]] = [:]
 
-      for entry in groupEntries {
+    for entry in parsedEntries {
+      if entriesByGroupID[entry.group.idPrefix] == nil {
+        orderedGroupIDs.append(entry.group.idPrefix)
+      }
+      entriesByGroupID[entry.group.idPrefix, default: []].append(entry)
+    }
+
+    var limits: [UsageLimit] = []
+    for groupID in orderedGroupIDs {
+      guard let rawGroupEntries = entriesByGroupID[groupID] else { continue }
+
+      var deduplicatedByWindow: [Entry] = []
+      for entry in rawGroupEntries {
+        if let existingIndex = deduplicatedByWindow.firstIndex(where: { $0.window == entry.window }) {
+          deduplicatedByWindow[existingIndex] = entry
+        } else {
+          deduplicatedByWindow.append(entry)
+        }
+      }
+
+      let sortedEntries = deduplicatedByWindow.sorted { lhs, rhs in
+        lhs.window == .session && rhs.window == .weekly
+      }
+
+      for entry in sortedEntries {
         let kind = entry.window == .session ? "session" : "weekly"
         let detail = entry.window == .session ? "Sessão de 5 horas" : "Semanal"
         limits.append(
           UsageLimit(
-            id: "gemini-\(group.rawValue)-\(kind)",
-            name: group.displayName,
+            id: "\(entry.group.idPrefix)-\(kind)",
+            name: entry.group.displayName,
             detail: detail,
             window: entry.window,
             usedPercentage: Int((100 - entry.remaining).rounded()),
@@ -86,7 +79,8 @@ nonisolated enum GeminiQuotaParser {
       icon: .symbol("sparkle"),
       tint: .blue,
       sessionState: .active,
-      limits: limits
+      limits: limits,
+      lastUpdatedAt: now
     )
   }
 
@@ -101,20 +95,19 @@ nonisolated enum GeminiQuotaParser {
       .filter { !$0.isEmpty }
 
     var collected: [Entry] = []
-    var rawGroup: String?
+    var currentGroup: ParsedGroup?
     var label: String?
     var remaining: Double?
     var resetsAt: Date?
 
     func flush() {
-      if let rawGroup,
-        let group = ModelGroup.matching(header: rawGroup),
+      if let currentGroup,
         let label,
         let remaining
       {
         let window: LimitWindow = isFiveHour(label) ? .session : .weekly
         collected.append(
-          Entry(group: group, window: window, remaining: remaining, resetsAt: resetsAt)
+          Entry(group: currentGroup, window: window, remaining: remaining, resetsAt: resetsAt)
         )
       }
       label = nil
@@ -123,9 +116,12 @@ nonisolated enum GeminiQuotaParser {
     }
 
     for line in lines {
-      if isGroupHeader(line) {
+      if line.localizedCaseInsensitiveContains("within each group") {
+        break
+      }
+      if isGroupHeader(line), let parsedGroup = makeParsedGroup(from: line) {
         flush()
-        rawGroup = line
+        currentGroup = parsedGroup
       } else if line.contains("Limit"), !line.contains("%") {
         flush()
         label = line
@@ -147,10 +143,101 @@ nonisolated enum GeminiQuotaParser {
   }
 
   private static func isGroupHeader(_ line: String) -> Bool {
-    line.count >= 4
-      && line.uppercased() == line
-      && line.contains(where: \.isLetter)
-      && line.allSatisfy { $0.isLetter || $0.isNumber || $0 == " " }
+    guard line.count >= 3, !line.contains("%") else { return false }
+
+    let lower = line.lowercased()
+    if lower.contains("limit")
+      || lower.contains("refreshes in")
+      || lower.contains("resets in")
+      || lower.contains("within each group")
+      || lower.contains("models & quota")
+    {
+      return false
+    }
+
+    let letters = line.filter(\.isLetter)
+    guard letters.count >= 3, letters.allSatisfy(\.isUppercase) else {
+      return false
+    }
+
+    let allowedPunctuation: Set<Character> = [" ", ".", "-", "/", "&", "+", "_", "(", ")", ":"]
+    return line.allSatisfy {
+      $0.isLetter || $0.isNumber || allowedPunctuation.contains($0)
+    }
+  }
+
+  private static func makeParsedGroup(from header: String) -> ParsedGroup? {
+    let tokenPattern = #/[a-z0-9]+/#
+    let slugTokens = header.lowercased().matches(of: tokenPattern).map { String($0.output) }
+    guard !slugTokens.isEmpty else { return nil }
+
+    let idPrefix: String
+    if slugTokens.first == "gemini", slugTokens.count > 1 {
+      idPrefix = slugTokens.joined(separator: "-")
+    } else {
+      idPrefix = (["gemini"] + slugTokens).joined(separator: "-")
+    }
+
+    return ParsedGroup(idPrefix: idPrefix, displayName: formatDisplayName(from: header))
+  }
+
+  private static func formatDisplayName(from header: String) -> String {
+    var words =
+      header
+      .split(whereSeparator: \.isWhitespace)
+      .map(String.init)
+
+    if words.count > 2, words.last == "MODELS" {
+      words.removeLast()
+    }
+
+    return words.map(formatWordToken).joined(separator: " ")
+  }
+
+  private static func formatWordToken(_ token: String) -> String {
+    if token == "AND" {
+      return "e"
+    }
+    if token == "&" || token == "/" || token == "-" {
+      return token
+    }
+
+    if token.contains("-") {
+      return token.split(separator: "-", omittingEmptySubsequences: false)
+        .map { formatAtomicWord(String($0)) }
+        .joined(separator: "-")
+    }
+    if token.contains("/") {
+      return token.split(separator: "/", omittingEmptySubsequences: false)
+        .map { formatAtomicWord(String($0)) }
+        .joined(separator: "/")
+    }
+
+    return formatAtomicWord(token)
+  }
+
+  private static func formatAtomicWord(_ word: String) -> String {
+    let leading = word.prefix { !$0.isLetter && !$0.isNumber }
+    let remainder = word.dropFirst(leading.count)
+    let trailingReversed = remainder.reversed().prefix { !$0.isLetter && !$0.isNumber }
+    let core = String(remainder.dropLast(trailingReversed.count))
+    let trailing = String(trailingReversed.reversed())
+
+    guard !core.isEmpty else {
+      return word
+    }
+
+    let preservedAcronyms: Set<String> = ["GPT", "AI", "API", "CLI", "LLM", "UI"]
+    if preservedAcronyms.contains(core) {
+      return "\(leading)\(core)\(trailing)"
+    }
+    guard core.contains(where: \.isLetter), core.first?.isNumber != true else {
+      return "\(leading)\(core)\(trailing)"
+    }
+
+    let lower = core.lowercased()
+    guard let first = lower.first else { return word }
+    return "\(leading)\(String(first).uppercased())\(lower.dropFirst())\(trailing)"
   }
 
   private static func percentage(in line: String) -> Double? {

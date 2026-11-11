@@ -14,6 +14,17 @@ struct ProviderSummaryCard: View {
     }
   }
 
+  private var isStale: Bool {
+    provider.sessionState.isStale
+  }
+
+  private var strokeColor: Color {
+    if isStale {
+      return .orange.opacity(isSelected ? 0.68 : 0.42)
+    }
+    return color.opacity(isSelected ? 0.55 : 0.16)
+  }
+
   @ViewBuilder
   private var iconView: some View {
     switch provider.icon {
@@ -43,6 +54,13 @@ struct ProviderSummaryCard: View {
 
           Spacer(minLength: 0)
 
+          if isStale {
+            Image(systemName: "exclamationmark.triangle.fill")
+              .font(.system(size: 9.5, weight: .semibold))
+              .foregroundStyle(.orange)
+              .help(provider.staleReason ?? provider.sessionState.label)
+          }
+
           Image(systemName: "chevron.down")
             .font(.system(size: 8, weight: .semibold))
             .foregroundStyle(.tertiary)
@@ -60,12 +78,14 @@ struct ProviderSummaryCard: View {
       .background(color.opacity(isSelected ? 0.15 : 0.09), in: RoundedRectangle(cornerRadius: 10))
       .overlay {
         RoundedRectangle(cornerRadius: 10)
-          .stroke(color.opacity(isSelected ? 0.55 : 0.16), lineWidth: isSelected ? 1 : 0.5)
+          .stroke(strokeColor, lineWidth: isSelected || isStale ? 1 : 0.5)
       }
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
-    .accessibilityLabel("\(isSelected ? "Ocultar" : "Mostrar") detalhes de \(provider.name)")
+    .accessibilityLabel(
+      "\(isSelected ? "Ocultar" : "Mostrar") detalhes de \(provider.name)\(isStale ? ", leitura defasada" : "")"
+    )
   }
 }
 

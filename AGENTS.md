@@ -30,14 +30,14 @@ Aplicativo nativo de barra de menus para macOS (`Brain Panel.app`, `com.h3zord.B
 
 ## Invariantes do domínio e testes que as garantem
 
-- **Cotas, menor disponibilidade e janelas de renovação:** `BrainPanelTests/Unit/ProviderUsageTests.swift`
-- **Parsing somente-leitura das telas `/usage` e `/quota`:** `BrainPanelTests/Unit/ClaudeUsageParserTests.swift` e `BrainPanelTests/Unit/GeminiQuotaParserTests.swift`
+- **Cotas, menor disponibilidade, estado defasado (`stale`) e janelas de renovação:** `BrainPanelTests/Unit/ProviderUsageTests.swift`
+- **Parsing somente-leitura das telas `/usage` e `/quota` (com grupos dinâmicos):** `BrainPanelTests/Unit/ClaudeUsageParserTests.swift` e `BrainPanelTests/Unit/GeminiQuotaParserTests.swift`
 - **Limpeza ANSI/VT100 e tela virtual de terminal:** `BrainPanelTests/Unit/TerminalTextAndScreenTests.swift`
 - **Estado de conversas ativas, limiares de contexto e extração de transcript JSONL:** `BrainPanelTests/Unit/ActiveConversationDomainTests.swift` e `BrainPanelTests/Integration/ActiveConversationCollectorIntegrationTests.swift`
-- **Cache por relógio injetado, preservação da última leitura válida em erro, concorrência e cancelamento no `deinit`:** `BrainPanelTests/Unit/UsageStoreTests.swift`
+- **Cache por relógio injetado, transição para leitura defasada (`stale`) em erro, concorrência e cancelamento no `deinit`:** `BrainPanelTests/Unit/UsageStoreTests.swift`
 - **Configuração validada no boot (fail-closed) e códigos de erro enumerados:** `BrainPanelTests/Unit/AppConfigAndErrorTests.swift`
 - **Não vazamento de dados sensíveis em erros ou logs estruturados (canário):** `BrainPanelTests/Unit/SecurityCanaryTests.swift`
-- **Escrita integral em pseudo-terminal sob escrita parcial e interrupções:** `BrainPanelTests/Integration/PseudoTerminalSessionIntegrationTests.swift`
+- **Escrita integral e encerramento garantido (`SIGTERM` -> `SIGKILL`) em pseudo-terminal:** `BrainPanelTests/Integration/PseudoTerminalSessionIntegrationTests.swift`
 - **Fronteiras de camadas (`Domain` -> `Application` -> `Adapters`) e integridade documental:** `BrainPanelTests/Unit/ArchitectureTests.swift` e `BrainPanelTests/Unit/DocumentationIntegrityTests.swift`
 
 ## Onde está o quê

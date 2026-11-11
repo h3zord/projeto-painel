@@ -88,7 +88,8 @@ final class SecurityCanaryTests: XCTestCase {
             sessionState: .active,
             limits: []
           )
-        )
+        ),
+        .failure(RawExternalFailure(message: "Falha stale \(canaryToken) \(canaryDocument)")),
       ]
     )
 
@@ -100,10 +101,14 @@ final class SecurityCanaryTests: XCTestCase {
       startPeriodicRefresh: false
     )
     await store.refresh()
+    await store.refresh()
 
     for provider in store.providers {
       if let reason = provider.unavailableReason {
         assertNoCanary(in: reason)
+      }
+      if let staleReason = provider.staleReason {
+        assertNoCanary(in: staleReason)
       }
     }
 
