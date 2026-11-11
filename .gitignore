@@ -1,6 +1,9 @@
 .DS_Store
+/local/
 DerivedData/
 build/
+coverage/
+test-results/
 *.xcuserstate
 xcuserdata/
 *.xccheckout
@@ -9,3 +12,10 @@ xcuserdata/
 *.app/
 *.dSYM
 *.dSYM.zip
+.env
+.env.*
+!.env.example
+.claude/settings.local.json
+.agents/hooks.json
+__pycache__/
+*.py[cod]

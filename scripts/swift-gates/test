@@ -1,0 +1,48 @@
+#!/bin/sh
+# scripts/swift-gates/test — confere que check-swift reprova cada caso de reprova.swift (com substituto) e aprova passa.swift
+set -eu
+
+want=$(grep -c '// reprova' scripts/swift-gates/reprova.swift)
+output_file="local/tmp/swift-gates-out-$$"
+cleanup() {
+  status=$?
+  trap - EXIT INT TERM
+  if [ -f "$output_file" ]; then
+    rm -f "$output_file" || { s=$?; [ "$status" -ne 0 ] || status=$s; }
+  fi
+  exit "$status"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+mkdir -p local/tmp
+
+if python3 scripts/check-swift scripts/swift-gates/reprova.swift >"$output_file" 2>&1; then
+  echo "swift-gates/test: check-swift aprovou indevidamente scripts/swift-gates/reprova.swift" >&2
+  exit 1
+fi
+
+got=$(grep -c '// reprova' "$output_file")
+[ "$got" -eq "$want" ] || {
+  echo "swift-gates/test: pegou $got de $want casos de reprova.swift" >&2
+  cat "$output_file" >&2
+  exit 1
+}
+
+for substituto in "Shared/Errors" "allow-force-unwrap" "ErrorHandler" "Shared/Clock" "Shared/Config"; do
+  grep -q "$substituto" "$output_file" || {
+    echo "swift-gates/test: mensagem sem indicação do substituto '$substituto'" >&2
+    exit 1
+  }
+done
+
+python3 scripts/check-swift scripts/swift-gates/passa.swift || {
+  echo "swift-gates/test: check-swift reprovou falso positivo em passa.swift" >&2
+  exit 1
+}
+
+python3 scripts/check-swift BrainPanel/Shared/Clock/Clock.swift BrainPanel/Shared/Config/AppConfig.swift || {
+  echo "swift-gates/test: check-swift reprovou os arquivos autorizados Shared/Clock ou Shared/Config" >&2
+  exit 1
+}

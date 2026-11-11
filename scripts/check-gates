@@ -1,0 +1,20 @@
+#!/bin/sh
+# Reprova passo que transforma falha em verde (dev-methodology, ci-cd.md: "passo que não reprova não é portão").
+# 17/out/2026: o padrão antigo deixava passar `|| true` antes de aspas, e `@-`, `+-` e espaço antes do `-` do Make.
+# 19/out/2026: `|| echo`, `|| exit 0` e `|| return 0` no começo de uma linha de continuação passavam.
+# Sem argumento, olha o projeto; com arquivos, só eles (é assim que scripts/gates/test prova a trava).
+skip='^scripts/(check-gates$|gates/|swift-gates/)'
+files=${*:-$(git ls-files Makefile '*.mk' '.github/workflows/*' 'scripts/*' | grep -vE "$skip")}
+makefiles=${*:-$(git ls-files Makefile '*.mk' | grep -vE "$skip")}
+tab=$(printf '\t')
+# /dev/null: sem arquivo na lista, o grep leria a entrada padrão e ficaria esperando
+# `[ teste ] || exit 0` é guarda, não falha engolida: o que vem antes do || não pode ser `]`
+swallow='\|\|[[:space:]]*(true|:)([^[:alnum:]_-]|$)|(^|[^][:space:]])[[:space:]]*\|\|[[:space:]]*((exit|return)[[:space:]]+0([^[:digit:]]|$)|echo([[:space:]]|$))'
+ignore='(make|\$\(MAKE\))([[:blank:]]+[^[:blank:]]+)*[[:blank:]]+(-i|--ignore-errors)([[:blank:]]|$)'
+found=$(grep -nHE "$swallow|$ignore|--exit-zero|continue-on-error" $files /dev/null
+        grep -nHE "^${tab}[@+[:blank:]]*-|^\.IGNORE[[:blank:]]*:" $makefiles /dev/null)
+if [ -n "$found" ]; then
+  echo "check-gates: estes passos engolem a falha; guarde o código de saída e devolva-o no fim:" >&2
+  echo "$found" >&2
+  exit 1
+fi

@@ -1,0 +1,30 @@
+#!/bin/sh
+# Recusa push direto na main (tudo entra por PR) e roda o make check,
+# pulando se o mesmo commit já tiver make ci verde registrado na fila (brain-ci green).
+set -eu
+
+zero_sha="0000000000000000000000000000000000000000"
+pushed_sha=""
+
+while read -r _local_ref local_sha remote_ref _remote_sha; do
+  if [ "$remote_ref" = "refs/heads/main" ]; then
+    echo "pre-push: push direto na main recusado. Abra um PR." >&2
+    exit 1
+  fi
+  if [ "$local_sha" != "$zero_sha" ]; then
+    pushed_sha="$local_sha"
+  fi
+done
+
+if [ -z "$pushed_sha" ]; then
+  exit 0
+fi
+
+if [ -x "$HOME/Brain/bin/brain-ci" ] && [ -z "$(git status --porcelain)" ]; then
+  if "$HOME/Brain/bin/brain-ci" green "$pushed_sha" -- make ci >/dev/null 2>&1; then
+    echo "pre-push: make ci já verde na fila para $pushed_sha; pulando make check."
+    exit 0
+  fi
+fi
+
+make check

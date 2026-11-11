@@ -1,0 +1,263 @@
+#!/usr/bin/env python3
+"""Varredura portável de segredos com gitleaks para repositórios normais, worktrees e shallow clones.
+
+Garante que:
+1. O histórico Git de HEAD seja materializado em um repositório bare isolado (funcionando em git worktree
+   e em shallow clone de CI) e reprove (exit != 0) se o gitleaks falhar ou escanear menos commits do que
+   o histórico alcançável em HEAD.
+2. Os arquivos da árvore de trabalho (git ls-files) sejam copiados sem pipeline POSIX sh que engula código
+   de saída: deleções não estagiadas são ignoradas, mas qualquer falha real de leitura/cópia reprova.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shutil
+import stat
+import subprocess
+import sys
+from pathlib import Path
+
+DEFAULT_GITLEAKS_IMAGE = "zricethezav/gitleaks:v8.30.1"
+SCANNED_COMMITS_RE = re.compile(r"(\d+)\s+commits?\s+scanned")
+FATAL_OUTPUT_RE = re.compile(r"(?:\bERR\b|\bFTL\b|\[git\]\s*fatal:|fatal:\s+not a git repository)")
+
+
+def run_checked_git(repo: Path, args: list[str], *, text: bool = True) -> subprocess.CompletedProcess[str] | subprocess.CompletedProcess[bytes]:
+    return subprocess.run(
+        ["git", "-C", str(repo), *args],
+        check=True,
+        capture_output=True,
+        text=text,
+    )
+
+
+def count_commits_with_changes(bare_dir: Path) -> int:
+    raw_proc = run_checked_git(
+        bare_dir,
+        ["log", "--full-history", "--all", "--no-merges", "--raw", "--format=tformat:COMMIT"],
+        text=True,
+    )
+    expected = 0
+    current_has_change = False
+    for line in str(raw_proc.stdout).splitlines():
+        if line == "COMMIT":
+            if current_has_change:
+                expected += 1
+            current_has_change = False
+        elif line.startswith(":"):
+            current_has_change = True
+    if current_has_change:
+        expected += 1
+    return expected
+
+
+def build_bare_snapshot(repo_root: Path, bare_dir: Path) -> int:
+    common_proc = run_checked_git(
+        repo_root,
+        ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        text=True,
+    )
+    common_dir = Path(str(common_proc.stdout).strip())
+    if not common_dir.is_dir():
+        raise RuntimeError(f"diretório git comum inválido: {common_dir}")
+
+    alternates = common_dir / "objects" / "info" / "alternates"
+    if alternates.is_file():
+        raise RuntimeError(f"repositório usa git alternates não suportado em container isolado: {alternates}")
+
+    head_proc = run_checked_git(repo_root, ["rev-parse", "HEAD"], text=True)
+    head_sha = str(head_proc.stdout).strip()
+
+    bare_dir.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init", "--bare", "--quiet", str(bare_dir)], check=True)
+
+    objects_dst = bare_dir / "objects"
+    if objects_dst.exists():
+        shutil.rmtree(objects_dst)
+    shutil.copytree(common_dir / "objects", objects_dst)
+
+    refs_src = common_dir / "refs"
+    refs_dst = bare_dir / "refs"
+    if refs_src.is_dir():
+        if refs_dst.exists():
+            shutil.rmtree(refs_dst)
+        shutil.copytree(refs_src, refs_dst)
+
+    for optional_file in ("packed-refs", "shallow"):
+        src_file = common_dir / optional_file
+        if src_file.is_file():
+            shutil.copyfile(src_file, bare_dir / optional_file)
+
+    run_checked_git(bare_dir, ["update-ref", "refs/heads/__scan_head", head_sha], text=True)
+    run_checked_git(bare_dir, ["symbolic-ref", "HEAD", "refs/heads/__scan_head"], text=True)
+    return count_commits_with_changes(bare_dir)
+
+
+def stage_working_tree(repo_root: Path, tree_dir: Path) -> int:
+    ls_proc = run_checked_git(
+        repo_root,
+        ["ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+        text=False,
+    )
+    raw_entries = bytes(ls_proc.stdout).split(b"\0")
+    tree_dir.mkdir(parents=True, exist_ok=True)
+    copied = 0
+
+    for entry in raw_entries:
+        if not entry:
+            continue
+        rel_path = os.fsdecode(entry)
+        src = repo_root / rel_path
+        try:
+            st = os.lstat(src)
+        except FileNotFoundError:
+            # Arquivo rastreado apagado localmente sem git rm: não há bytes na árvore atual.
+            continue
+
+        dst = tree_dir / rel_path
+        dst.parent.mkdir(parents=True, exist_ok=True)
+
+        mode = st.st_mode
+        if stat.S_ISREG(mode):
+            shutil.copyfile(src, dst)
+            copied += 1
+        elif stat.S_ISLNK(mode):
+            target = os.readlink(src)
+            dst.write_text(target, encoding="utf-8")
+            copied += 1
+        else:
+            raise RuntimeError(f"entrada não regular inesperada na árvore de trabalho: {rel_path}")
+
+    return copied
+
+
+def invoke_gitleaks(
+    *,
+    mode: str,
+    mount_dir: Path,
+    image: str,
+    custom_cmd_json: str | None,
+) -> tuple[int, str]:
+    if custom_cmd_json is not None:
+        base_cmd = json.loads(custom_cmd_json)
+        if not isinstance(base_cmd, list) or not all(isinstance(x, str) for x in base_cmd):
+            raise ValueError("--gitleaks-cmd-json deve ser uma lista JSON de strings")
+        cmd = [*base_cmd, mode, "--no-banner", str(mount_dir)]
+    else:
+        container_target = "/repo.git" if mode == "git" else "/scan"
+        env_args = (
+            [
+                "-e",
+                "GIT_CONFIG_COUNT=1",
+                "-e",
+                "GIT_CONFIG_KEY_0=safe.directory",
+                "-e",
+                f"GIT_CONFIG_VALUE_0={container_target}",
+            ]
+            if mode == "git"
+            else []
+        )
+        cmd = [
+            "docker",
+            "run",
+            "--rm",
+            *env_args,
+            "-v",
+            f"{mount_dir.resolve()}:{container_target}:ro",
+            "-w",
+            container_target,
+            image,
+            mode,
+            "--no-banner",
+            container_target,
+        ]
+
+    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    combined = (proc.stdout or "") + (proc.stderr or "")
+    if combined:
+        sys.stderr.write(combined)
+    return proc.returncode, combined
+
+
+def validate_git_scan_output(returncode: int, output: str, expected_commits: int) -> None:
+    if returncode != 0:
+        raise RuntimeError(f"gitleaks git reprovou com código {returncode}")
+
+    if FATAL_OUTPUT_RE.search(output):
+        raise RuntimeError("gitleaks git reportou erro de execução/repositório na saída")
+
+    if expected_commits > 0:
+        match = SCANNED_COMMITS_RE.search(output)
+        if match is None:
+            raise RuntimeError(
+                f"gitleaks git não informou contagem de commits escaneados (esperado >= {expected_commits})"
+            )
+        scanned = int(match.group(1))
+        if scanned < expected_commits:
+            raise RuntimeError(
+                f"gitleaks git escaneou apenas {scanned} commit(s), esperado >= {expected_commits}"
+            )
+
+
+def validate_dir_scan_output(returncode: int, output: str) -> None:
+    if returncode != 0:
+        raise RuntimeError(f"gitleaks dir reprovou com código {returncode}")
+    if FATAL_OUTPUT_RE.search(output):
+        raise RuntimeError("gitleaks dir reportou erro de execução na saída")
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(description="Executa varredura gitleaks em histórico e árvore.")
+    parser.add_argument("work_dir", help="Diretório temporário (dentro de local/tmp/) para artefatos de scan")
+    parser.add_argument("--repo", default=".", help="Caminho do repositório ou git worktree")
+    parser.add_argument("--image", default=DEFAULT_GITLEAKS_IMAGE, help="Imagem Docker do gitleaks")
+    parser.add_argument(
+        "--gitleaks-cmd-json",
+        default=None,
+        help="Comando substituto em JSON (usado exclusivamente por scripts/gitleaks-gates/test)",
+    )
+    args = parser.parse_args(argv[1:])
+
+    repo_root = Path(args.repo).resolve()
+    work_dir = Path(args.work_dir).resolve()
+    bare_dir = work_dir / "bare.git"
+    tree_dir = work_dir / "tree"
+
+    try:
+        if work_dir.exists():
+            shutil.rmtree(work_dir)
+        work_dir.mkdir(parents=True, exist_ok=True)
+
+        expected_commits = build_bare_snapshot(repo_root, bare_dir)
+        git_rc, git_out = invoke_gitleaks(
+            mode="git",
+            mount_dir=bare_dir,
+            image=args.image,
+            custom_cmd_json=args.gitleaks_cmd_json,
+        )
+        validate_git_scan_output(git_rc, git_out, expected_commits)
+
+        copied_files = stage_working_tree(repo_root, tree_dir)
+        if copied_files > 0:
+            dir_rc, dir_out = invoke_gitleaks(
+                mode="dir",
+                mount_dir=tree_dir,
+                image=args.image,
+                custom_cmd_json=args.gitleaks_cmd_json,
+            )
+            validate_dir_scan_output(dir_rc, dir_out)
+        return 0
+    except Exception as exc:
+        print(f"run-gitleaks: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        if work_dir.exists():
+            shutil.rmtree(work_dir, ignore_errors=True)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

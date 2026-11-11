@@ -1,0 +1,179 @@
+#!/usr/bin/env python3
+"""Verificação portável de integridade documental, arquitetura e ausência de legado (10/11/2026, issue #2)."""
+
+from __future__ import annotations
+
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+REQUIRED_DOCS = [
+    "AGENTS.md",
+    "CLAUDE.md",
+    "README.md",
+    "docs/adr/0001-plataforma-macos-e-ci.md",
+    "docs/adr/0002-arquitetura-camadas-erros-e-fronteiras.md",
+]
+
+REPO_PATH_PREFIXES = (
+    "BrainPanel/",
+    "BrainPanel.xcodeproj",
+    "BrainPanelTests/",
+    "scripts/",
+    "docs/",
+    ".github/",
+    ".vscode/",
+)
+
+EXACT_REPO_FILES = {
+    "Makefile",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "README.md",
+    "LICENSE",
+    ".gitignore",
+    ".dockerignore",
+    ".env.example",
+    ".swift-format",
+}
+
+FORBIDDEN_LEGACY_PATTERNS = [
+    (re.compile(r"\bCodex(?:Collector)?\b", re.IGNORECASE), "referência residual a Codex"),
+    (re.compile(r"\bFriday(?:State|Snapshot|Tab|Daily|Backup|Health|Waiting|Scheduled)?\b"), "referência residual a Friday"),
+    (re.compile(r"friday-[a-z-]+"), "referência residual a friday-*"),
+    (re.compile(r"Untitled[- ]Project"), "referência residual a Untitled Project"),
+    (re.compile(r"com\.gbz\."), "referência residual a com.gbz.*"),
+]
+
+
+def extract_make_targets(makefile_text: str) -> set[str]:
+    return set(re.findall(r"(?m)^([a-zA-Z0-9][a-zA-Z0-9_-]*)\s*:", makefile_text))
+
+
+def check_documents(repo_root: Path, targets: set[str]) -> list[str]:
+    errors: list[str] = []
+
+    for rel in REQUIRED_DOCS:
+        if not (repo_root / rel).is_file():
+            errors.append(f"documento obrigatório ausente: {rel} (crie o arquivo conforme AGENTS.md)")
+
+    if errors:
+        return errors
+
+    agents_text = (repo_root / "AGENTS.md").read_text(encoding="utf-8")
+    if "dev-methodology: 8267b37" not in agents_text:
+        errors.append("AGENTS.md não contém 'dev-methodology: 8267b37'")
+
+    claude_text = (repo_root / "CLAUDE.md").read_text(encoding="utf-8").strip()
+    if claude_text != "@AGENTS.md":
+        errors.append("CLAUDE.md deve conter exclusivamente '@AGENTS.md'")
+
+    adr_files = sorted((repo_root / "docs/adr").glob("*.md"))
+    docs_to_scan = [repo_root / "AGENTS.md", repo_root / "README.md", *adr_files]
+
+    inline_re = re.compile(r"`([^`\n]+)`")
+    make_re = re.compile(r"^make\s+([a-zA-Z0-9_-]+)(?:\s|$)")
+
+    for doc_path in docs_to_scan:
+        content = doc_path.read_text(encoding="utf-8")
+        rel_doc = doc_path.relative_to(repo_root).as_posix()
+        for match in inline_re.finditer(content):
+            snippet = match.group(1).strip()
+            make_match = make_re.match(snippet)
+            if make_match:
+                target = make_match.group(1)
+                if target not in targets:
+                    errors.append(
+                        f"{rel_doc}: alvo 'make {target}' não existe no Makefile; atualize o documento ou o Makefile"
+                    )
+                continue
+
+            is_repo_path = snippet in EXACT_REPO_FILES or snippet.startswith(REPO_PATH_PREFIXES)
+            if not is_repo_path:
+                continue
+            if any(ch in snippet for ch in ("<", "{", "*")):
+                continue
+
+            clean = snippet.rstrip("/")
+            if not (repo_root / clean).exists():
+                errors.append(
+                    f"{rel_doc}: caminho '{snippet}' citado na documentação não existe no repositório"
+                )
+
+    return errors
+
+
+def check_legacy_references(repo_root: Path) -> list[str]:
+    errors: list[str] = []
+    exempt = {"scripts/check-docs"}
+    proc = subprocess.run(
+        ["git", "ls-files"],
+        cwd=repo_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    tracked = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+
+    for rel in tracked:
+        if rel in exempt:
+            continue
+        file_path = repo_root / rel
+        if not file_path.is_file():
+            continue
+        try:
+            text = file_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        for regex, label in FORBIDDEN_LEGACY_PATTERNS:
+            found = regex.search(text)
+            if found:
+                errors.append(f"{rel}: {label} encontrada ('{found.group(0)}')")
+    return errors
+
+
+def check_portable_architecture(repo_root: Path) -> list[str]:
+    errors: list[str] = []
+    bp_root = repo_root / "BrainPanel"
+    domain_forbidden = {"SwiftUI", "AppKit", "Darwin", "OSLog", "Observation"}
+    app_forbidden = {"SwiftUI", "AppKit", "Darwin"}
+    import_re = re.compile(r"(?m)^\s*import\s+([A-Za-z0-9_]+)")
+
+    for swift_file in sorted(bp_root.rglob("*.swift")):
+        rel = swift_file.relative_to(bp_root).as_posix()
+        text = swift_file.read_text(encoding="utf-8")
+        imports = set(import_re.findall(text))
+        if "/Domain/" in rel:
+            bad = imports & domain_forbidden
+            for mod in sorted(bad):
+                errors.append(f"BrainPanel/{rel}: camada Domain não pode importar '{mod}'")
+        elif "/Application/" in rel:
+            bad = imports & app_forbidden
+            for mod in sorted(bad):
+                errors.append(f"BrainPanel/{rel}: camada Application não pode importar '{mod}'")
+    return errors
+
+
+def main() -> int:
+    repo_root = Path.cwd()
+    makefile_path = repo_root / "Makefile"
+    if not makefile_path.is_file():
+        print("check-docs: Makefile ausente", file=sys.stderr)
+        return 1
+
+    targets = extract_make_targets(makefile_path.read_text(encoding="utf-8"))
+    errors = [
+        *check_documents(repo_root, targets),
+        *check_legacy_references(repo_root),
+        *check_portable_architecture(repo_root),
+    ]
+    if errors:
+        for err in errors:
+            print(f"check-docs: {err}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

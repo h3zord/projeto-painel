@@ -1,0 +1,14 @@
+{
+  "editor.formatOnSave": true,
+  "[swift]": {
+    "editor.defaultFormatter": "swiftlang.swift-vscode",
+    "editor.tabSize": 2,
+    "editor.insertSpaces": true
+  },
+  "files.exclude": {
+    "local": true
+  },
+  "search.exclude": {
+    "local": true
+  }
+}

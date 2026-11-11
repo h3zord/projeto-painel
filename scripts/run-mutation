@@ -1,0 +1,283 @@
+#!/usr/bin/env python3
+"""Teste de mutação do domínio crítico do Brain Panel (10/11/2026, issue #2).
+
+Copia o projeto para um workspace isolado em local/tmp/mutation-<pid> para nunca sujar a árvore git,
+executa o controle sem mutação (exigindo 0 falhas) e aplica mutantes semânticos no domínio crítico.
+Uma mutante só conta como morta quando o runner executa os testes e reporta falha real de asserção
+('Executed N tests, with M failure' com M >= 1), nunca por erro de build nem por timeout.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+import shutil
+import signal
+import subprocess
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
+MUTANT_TIMEOUT_SECONDS = 90
+EXECUTED_RE = re.compile(r"Executed\s+(\d+)\s+tests?,\s+with\s+(\d+)\s+failures?")
+
+
+@dataclass(frozen=True)
+class MutantSpec:
+    id: str
+    relative_file: str
+    description: str
+    original: str
+    replacement: str
+
+
+MUTANTS: list[MutantSpec] = [
+    MutantSpec(
+        id="M01",
+        relative_file="BrainPanel/Modules/Quotas/Domain/ProviderUsage.swift",
+        description="remainingPercentage deixa de subtrair de 100",
+        original="100 - usedPercentage",
+        replacement="usedPercentage",
+    ),
+    MutantSpec(
+        id="M02",
+        relative_file="BrainPanel/Modules/Quotas/Domain/ProviderUsage.swift",
+        description="sessionLimit inverte comparação de janela mais consumida",
+        original=".filter { $0.window == .session }\n      .max { $0.usedPercentage < $1.usedPercentage }",
+        replacement=".filter { $0.window == .session }\n      .min { $0.usedPercentage < $1.usedPercentage }",
+    ),
+    MutantSpec(
+        id="M03",
+        relative_file="BrainPanel/Modules/Quotas/Domain/ProviderUsage.swift",
+        description="weeklyLimit do Gemini ignora preferência por Argon",
+        original='let argonWeekly = limits.first(where: { $0.id == "gemini-argon-weekly" && $0.window == .weekly })',
+        replacement='let argonWeekly = limits.first(where: { $0.id == "inexistente" && $0.window == .weekly })',
+    ),
+    MutantSpec(
+        id="M04",
+        relative_file="BrainPanel/Modules/Quotas/Domain/ClaudeUsageParser.swift",
+        description="conversão de horário PM no ClaudeUsageParser",
+        original="if isPM { hour += 12 }",
+        replacement="if isPM { hour += 0 }",
+    ),
+    MutantSpec(
+        id="M05",
+        relative_file="BrainPanel/Modules/Quotas/Domain/ClaudeUsageParser.swift",
+        description="avanço de dia quando horário sem mês já passou",
+        original="if monthName == nil, date < now {",
+        replacement="if monthName == nil, date > now {",
+    ),
+    MutantSpec(
+        id="M06",
+        relative_file="BrainPanel/Modules/Quotas/Domain/GeminiQuotaParser.swift",
+        description="conversão de percentual restante em usado no GeminiQuotaParser",
+        original="usedPercentage: Int((100 - entry.remaining).rounded())",
+        replacement="usedPercentage: Int(entry.remaining.rounded())",
+    ),
+    MutantSpec(
+        id="M07",
+        relative_file="BrainPanel/Modules/Quotas/Application/UsageCollector.swift",
+        description="preservação da última leitura ativa quando atualização falha",
+        original="if providers[index].sessionState == .active {",
+        replacement="if providers[index].sessionState != .active {",
+    ),
+    MutantSpec(
+        id="M08",
+        relative_file="BrainPanel/Modules/Sessions/Domain/ActiveConversation.swift",
+        description="fronteira exata do hardLimit em 500 mil tokens",
+        original="if contextTokens >= Self.hardLimit {",
+        replacement="if contextTokens > Self.hardLimit {",
+    ),
+    MutantSpec(
+        id="M09",
+        relative_file="BrainPanel/Modules/Sessions/Domain/ActiveConversation.swift",
+        description="soma de cache_read_input_tokens no ClaudeTranscriptParser",
+        original="return (input ?? 0) + (cacheRead ?? 0) + (cacheCreation ?? 0)",
+        replacement="return (input ?? 0) + (cacheCreation ?? 0)",
+    ),
+    MutantSpec(
+        id="M10",
+        relative_file="BrainPanel/Shared/Config/AppConfig.swift",
+        description="recusa de variável BRAIN_PANEL_* desconhecida no boot",
+        original="guard allowedEnvironmentKeys.contains(key) else {",
+        replacement="guard !key.isEmpty else {",
+    ),
+    MutantSpec(
+        id="M11",
+        relative_file="BrainPanel/Shared/Config/AppConfig.swift",
+        description="bloqueio de segmentos '..' em caminhos de configuração",
+        original='guard !segments.contains("..") else {',
+        replacement='guard !segments.contains("__nunca__") else {',
+    ),
+]
+
+
+def run_unit_tests(workspace: Path, derived_data: Path, isolated_env_dir: Path) -> tuple[int, str, bool]:
+    env = os.environ.copy()
+    env.update(
+        {
+            "BRAIN_PANEL_MODE": "testing",
+            "BRAIN_PANEL_CLAUDE_SESSIONS_DIR": str(isolated_env_dir / "sessions"),
+            "BRAIN_PANEL_CLAUDE_PROJECTS_DIR": str(isolated_env_dir / "projects"),
+            "BRAIN_PANEL_APP_SUPPORT_DIR": str(isolated_env_dir / "support"),
+            "BRAIN_PANEL_CLI_SEARCH_PATHS": str(isolated_env_dir / "empty-bin"),
+        }
+    )
+    cmd = [
+        "xcodebuild",
+        "test",
+        "-project",
+        str(workspace / "BrainPanel.xcodeproj"),
+        "-scheme",
+        "BrainPanel",
+        "-destination",
+        f"platform=macOS,arch={os.uname().machine}",
+        "-derivedDataPath",
+        str(derived_data),
+        "-only-testing:BrainPanelUnitTests",
+        "-parallel-testing-enabled",
+        "NO",
+        "-test-timeouts-enabled",
+        "YES",
+        "-default-test-execution-time-allowance",
+        "15",
+        "-maximum-test-execution-time-allowance",
+        "30",
+        "CODE_SIGNING_ALLOWED=NO",
+    ]
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=workspace,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=MUTANT_TIMEOUT_SECONDS,
+            check=False,
+        )
+        return proc.returncode, proc.stdout + "\n" + proc.stderr, False
+    except subprocess.TimeoutExpired as exc:
+        out = (exc.stdout or "") + "\n" + (exc.stderr or "")
+        return 124, out, True
+
+
+def count_executed_and_failed(output: str) -> tuple[int, int]:
+    total_executed = 0
+    total_failed = 0
+    for match in EXECUTED_RE.finditer(output):
+        total_executed += int(match.group(1))
+        total_failed += int(match.group(2))
+    return total_executed, total_failed
+
+
+def prepare_workspace(repo_root: Path, sandbox_root: Path) -> Path:
+    workspace = sandbox_root / "workspace"
+    workspace.mkdir(parents=True, exist_ok=True)
+
+    for item in (
+        "BrainPanel",
+        "BrainPanelTests",
+        "BrainPanel.xcodeproj",
+        "docs",
+        "scripts",
+        ".github",
+        ".vscode",
+        "Makefile",
+        "AGENTS.md",
+        "CLAUDE.md",
+        "README.md",
+        "LICENSE",
+        ".gitignore",
+        ".dockerignore",
+        ".env.example",
+        ".swift-format",
+    ):
+        src = repo_root / item
+        dst = workspace / item
+        if src.is_dir():
+            shutil.copytree(src, dst)
+        elif src.is_file():
+            shutil.copy2(src, dst)
+    return workspace
+
+
+def main() -> int:
+    repo_root = Path.cwd()
+    sandbox_root = repo_root / "local" / "tmp" / f"mutation-{os.getpid()}"
+    derived_data = sandbox_root / "DerivedData"
+    isolated_env_dir = sandbox_root / "isolated-env"
+
+    def handle_signal(signum: int, _frame: object) -> None:
+        if sandbox_root.exists():
+            shutil.rmtree(sandbox_root, ignore_errors=True)
+        sys.exit(130 if signum == signal.SIGINT else 143)
+
+    signal.signal(signal.SIGINT, handle_signal)
+    signal.signal(signal.SIGTERM, handle_signal)
+
+    try:
+        for sub in ("sessions", "projects", "support", "empty-bin"):
+            (isolated_env_dir / sub).mkdir(parents=True, exist_ok=True)
+        workspace = prepare_workspace(repo_root, sandbox_root)
+
+        print("mutação: rodando controle sem mutação...")
+        rc, control_out, timed_out = run_unit_tests(workspace, derived_data, isolated_env_dir)
+        executed, failed = count_executed_and_failed(control_out)
+        if timed_out or rc != 0 or executed == 0 or failed != 0:
+            print(
+                f"mutação: CONTROLE REPROVOU (rc={rc}, executados={executed}, falhas={failed}, timeout={timed_out})",
+                file=sys.stderr,
+            )
+            print(control_out[-2000:], file=sys.stderr)
+            return 1
+        print(f"mutação: controle VERDE ({executed} execuções de teste, 0 falhas)")
+
+        killed: list[str] = []
+        survived: list[str] = []
+        timeouts: list[str] = []
+        invalid: list[str] = []
+
+        for spec in MUTANTS:
+            target_file = workspace / spec.relative_file
+            original_content = target_file.read_text(encoding="utf-8")
+            occurrences = original_content.count(spec.original)
+            if occurrences != 1:
+                invalid.append(f"{spec.id} ({spec.relative_file}: trecho esperado 1x, achado {occurrences}x)")
+                continue
+
+            mutated_content = original_content.replace(spec.original, spec.replacement, 1)
+            target_file.write_text(mutated_content, encoding="utf-8")
+            try:
+                m_rc, m_out, m_timeout = run_unit_tests(workspace, derived_data, isolated_env_dir)
+            finally:
+                target_file.write_text(original_content, encoding="utf-8")
+
+            m_executed, m_failed = count_executed_and_failed(m_out)
+            if m_timeout:
+                timeouts.append(f"{spec.id}: {spec.description}")
+                print(f"  [TIMEOUT] {spec.id} — {spec.description}")
+            elif "** BUILD FAILED **" in m_out or m_executed == 0:
+                invalid.append(f"{spec.id}: falha de build/runner sem executar testes ({spec.description})")
+                print(f"  [INVÁLIDA] {spec.id} — {spec.description}")
+            elif m_rc != 0 and m_failed > 0:
+                killed.append(spec.id)
+                print(f"  [MORTA] {spec.id} — {spec.description} ({m_failed} teste(s) falharam)")
+            else:
+                survived.append(f"{spec.id}: {spec.description}")
+                print(f"  [SOBREVIVEU] {spec.id} — {spec.description}")
+
+        total = len(MUTANTS)
+        print(
+            f"\nResumo de mutação: total={total} | mortas={len(killed)} | sobreviventes={len(survived)} | timeouts={len(timeouts)} | inválidas={len(invalid)}"
+        )
+
+        if len(killed) == 0 or survived or timeouts or invalid:
+            return 1
+        return 0
+    finally:
+        if sandbox_root.exists():
+            shutil.rmtree(sandbox_root)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

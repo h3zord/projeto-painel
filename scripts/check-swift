@@ -1,0 +1,245 @@
+#!/usr/bin/env python3
+"""Travas estáticas de Swift do Brain Panel (10/11/2026, issue #2).
+
+Reprova padrões proibidos no código Swift com mensagem indicando o substituto:
+1. try! -> tratar erro e normalizar por Shared/Errors (AppError / ErrorHandler)
+2. force unwrap / cast / IUO ('!') sem justificativa na mesma linha
+3. bloco catch vazio
+4. leitura de relógio fora de Shared/Clock/Clock.swift
+5. leitura de ambiente fora de Shared/Config/AppConfig.swift
+"""
+
+from __future__ import annotations
+
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+ALLOW_FORCE_UNWRAP_RE = re.compile(r"//\s*swift-gate:\s*allow-force-unwrap\s+\S+")
+TRY_BANG_RE = re.compile(r"\btry!")
+FORCE_UNWRAP_RE = re.compile(r"[A-Za-z0-9_)\]}]\!(?!=)")
+EMPTY_CATCH_RE = re.compile(r"\bcatch\b[^{;]*\{\s*\}", re.MULTILINE)
+CLOCK_PATTERNS = [
+    re.compile(r"\bDate\s*\(\s*\)"),
+    re.compile(r"\bNSDate\s*\(\s*\)"),
+    re.compile(r"\bCFAbsoluteTimeGetCurrent\s*\("),
+    re.compile(r"\bDate\s*\.\s*now\b"),
+    re.compile(r"(?:[:=(,]\s*|\breturn\s+)\.\s*now\b"),
+]
+ENV_PATTERNS = [
+    re.compile(r"\bProcessInfo\s*\.\s*processInfo\s*\.\s*environment\b"),
+    re.compile(r"\bgetenv\s*\("),
+]
+
+
+def sanitize_swift_preserving_lines(source: str) -> tuple[str, dict[int, str]]:
+    """Substitui literais de string/regex e comentários por espaços preservando quebras de linha."""
+    raw_lines = {idx + 1: line for idx, line in enumerate(source.splitlines())}
+    out: list[str] = []
+    n = len(source)
+    i = 0
+
+    while i < n:
+        ch = source[i]
+
+        # Comentário de linha //
+        if ch == "/" and i + 1 < n and source[i + 1] == "/":
+            while i < n and source[i] != "\n":
+                out.append(" ")
+                i += 1
+            continue
+
+        # Comentário de bloco /* ... */ (com aninhamento em Swift)
+        if ch == "/" and i + 1 < n and source[i + 1] == "*":
+            depth = 1
+            out.extend([" ", " "])
+            i += 2
+            while i < n and depth > 0:
+                if source[i] == "/" and i + 1 < n and source[i + 1] == "*":
+                    depth += 1
+                    out.extend([" ", " "])
+                    i += 2
+                elif source[i] == "*" and i + 1 < n and source[i + 1] == "/":
+                    depth -= 1
+                    out.extend([" ", " "])
+                    i += 2
+                else:
+                    out.append("\n" if source[i] == "\n" else " ")
+                    i += 1
+            continue
+
+        # Raw string ou regex estendido #...# ("..." / """...""" / /.../)
+        if ch == "#":
+            hashes = 0
+            j = i
+            while j < n and source[j] == "#":
+                hashes += 1
+                j += 1
+            if j < n and source[j] in ('"', "/"):
+                delim = source[j]
+                is_multiline = (
+                    delim == '"' and j + 2 < n and source[j : j + 3] == '"""'
+                )
+                closing = ('"""' if is_multiline else delim) + ("#" * hashes)
+                step_open = hashes + (3 if is_multiline else 1)
+                out.extend([" "] * step_open)
+                i += step_open
+                while i < n:
+                    if source.startswith(closing, i):
+                        out.extend([" "] * len(closing))
+                        i += len(closing)
+                        break
+                    out.append("\n" if source[i] == "\n" else " ")
+                    i += 1
+                continue
+
+        # String multiline """..."""
+        if ch == '"' and i + 2 < n and source[i : i + 3] == '"""':
+            out.extend([" ", " ", " "])
+            i += 3
+            while i < n:
+                if source[i] == "\\" and i + 1 < n:
+                    out.append(" ")
+                    out.append("\n" if source[i + 1] == "\n" else " ")
+                    i += 2
+                    continue
+                if source.startswith('"""', i):
+                    out.extend([" ", " ", " "])
+                    i += 3
+                    break
+                out.append("\n" if source[i] == "\n" else " ")
+                i += 1
+            continue
+
+        # String comum "..."
+        if ch == '"':
+            out.append(" ")
+            i += 1
+            while i < n:
+                if source[i] == "\\" and i + 1 < n:
+                    out.extend([" ", " "])
+                    i += 2
+                    continue
+                if source[i] == '"':
+                    out.append(" ")
+                    i += 1
+                    break
+                if source[i] == "\n":
+                    out.append("\n")
+                    i += 1
+                    break
+                out.append(" ")
+                i += 1
+            continue
+
+        out.append(ch)
+        i += 1
+
+    return "".join(out), raw_lines
+
+
+def line_number_at(text: str, offset: int) -> int:
+    return text.count("\n", 0, offset) + 1
+
+
+def is_clock_allowed(normalized_path: str) -> bool:
+    return normalized_path.endswith("Shared/Clock/Clock.swift")
+
+
+def is_env_allowed(normalized_path: str) -> bool:
+    return normalized_path.endswith("Shared/Config/AppConfig.swift")
+
+
+def check_file(path: Path) -> list[str]:
+    normalized = path.as_posix()
+    source = path.read_text(encoding="utf-8")
+    sanitized, raw_lines = sanitize_swift_preserving_lines(source)
+    findings: list[tuple[int, str]] = []
+
+    for idx, clean_line in enumerate(sanitized.splitlines(), start=1):
+        raw_line = raw_lines.get(idx, "")
+
+        if TRY_BANG_RE.search(clean_line):
+            findings.append(
+                (
+                    idx,
+                    f"{normalized}:{idx}: proibido usar 'try!': trate o erro explicitamente e converta-o via Shared/Errors (AppError / ErrorHandler). | {raw_line.strip()}",
+                )
+            )
+
+        line_without_try_bang = TRY_BANG_RE.sub("try ", clean_line)
+        if FORCE_UNWRAP_RE.search(line_without_try_bang) and not ALLOW_FORCE_UNWRAP_RE.search(
+            raw_line
+        ):
+            findings.append(
+                (
+                    idx,
+                    f"{normalized}:{idx}: proibido force unwrap ('!') sem justificativa: use guard let / if let / '??' ou documente '// swift-gate: allow-force-unwrap <motivo>' na mesma linha. | {raw_line.strip()}",
+                )
+            )
+
+        if not is_clock_allowed(normalized):
+            if any(p.search(clean_line) for p in CLOCK_PATTERNS):
+                findings.append(
+                    (
+                        idx,
+                        f"{normalized}:{idx}: proibido ler o relógio fora de Shared/Clock: injete e use 'Clock' (BrainPanel/Shared/Clock/Clock.swift). | {raw_line.strip()}",
+                    )
+                )
+
+        if not is_env_allowed(normalized):
+            if any(p.search(clean_line) for p in ENV_PATTERNS):
+                findings.append(
+                    (
+                        idx,
+                        f"{normalized}:{idx}: proibido ler variáveis de ambiente fora de Shared/Config: leia e valide no boot via 'AppConfig' (BrainPanel/Shared/Config/AppConfig.swift). | {raw_line.strip()}",
+                    )
+                )
+
+    for match in EMPTY_CATCH_RE.finditer(sanitized):
+        line_no = line_number_at(sanitized, match.start())
+        raw_line = raw_lines.get(line_no, "").strip()
+        findings.append(
+            (
+                line_no,
+                f"{normalized}:{line_no}: proibido bloco 'catch' vazio: normalize por ErrorHandler (Shared/Errors) ou registre via StructuredLogger (Shared/Logging). | {raw_line}",
+            )
+        )
+
+    findings.sort(key=lambda item: item[0])
+    return [message for _, message in findings]
+
+
+def discover_default_swift_files() -> list[Path]:
+    files: list[Path] = []
+    for root_name in ("BrainPanel", "BrainPanelTests"):
+        root = Path(root_name)
+        if not root.exists():
+            continue
+        for candidate in sorted(root.rglob("*.swift")):
+            if "local/" in candidate.as_posix():
+                continue
+            files.append(candidate)
+    return files
+
+
+def main(argv: list[str]) -> int:
+    targets = [Path(arg) for arg in argv[1:]] if len(argv) > 1 else discover_default_swift_files()
+    all_findings: list[str] = []
+    for target in targets:
+        if not target.is_file():
+            print(f"check-swift: arquivo não encontrado: {target}", file=sys.stderr)
+            return 1
+        all_findings.extend(check_file(target))
+
+    if all_findings:
+        for finding in all_findings:
+            print(finding, file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
