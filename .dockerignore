@@ -1,0 +1,11 @@
+/local/
+.git/
+DerivedData/
+build/
+coverage/
+test-results/
+.env
+.env.*
+!.env.example
+.claude/
+.agents/hooks.json

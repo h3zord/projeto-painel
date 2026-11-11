@@ -1,0 +1,7 @@
+#!/bin/sh
+# scripts/gates/test — o check-gates pega cada caso de reprova.mk e deixa passar passa.mk
+set -eu
+want=$(grep -c '# reprova' scripts/gates/reprova.mk)
+got=$( (scripts/check-gates scripts/gates/reprova.mk 2>&1; exit 0) | sort -u | grep -c '# reprova' )
+[ "$got" -eq "$want" ] || { echo "check-gates pegou $got de $want casos de scripts/gates/reprova.mk" >&2; exit 1; }
+scripts/check-gates scripts/gates/passa.mk || { echo "check-gates reprovou o que só parece (scripts/gates/passa.mk)" >&2; exit 1; }

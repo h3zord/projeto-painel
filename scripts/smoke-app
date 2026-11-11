@@ -1,0 +1,143 @@
+#!/usr/bin/env python3
+"""Smoke/e2e do bundle compilado Brain Panel.app (10/11/2026, issue #2).
+
+Valida:
+1. Info.plist presente com CFBundleIdentifier == com.h3zord.BrainPanel e LSUIElement ativo.
+2. Binário Contents/MacOS/Brain Panel presente e executável.
+3. Autoverificação de inicialização (BRAIN_PANEL_MODE=self_check) em diretório isolado em local/tmp/,
+   sem acionar CLIs reais (claude/agy) nem ler ~/.claude.
+4. Falha fechada (exit != 0) diante de configuração inválida no boot, sem vazar canário no log.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import plistlib
+import subprocess
+import sys
+from pathlib import Path
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) != 3:
+        print("Uso: scripts/smoke-app '<caminho/Brain Panel.app>' '<dir-isolado-em-local/tmp>'", file=sys.stderr)
+        return 1
+
+    app_bundle = Path(argv[1]).resolve()
+    isolated_dir = Path(argv[2]).resolve()
+
+    info_plist_path = app_bundle / "Contents" / "Info.plist"
+    executable_path = app_bundle / "Contents" / "MacOS" / "Brain Panel"
+
+    if not info_plist_path.is_file():
+        print(f"smoke-app: Info.plist ausente em {info_plist_path}", file=sys.stderr)
+        return 1
+
+    with info_plist_path.open("rb") as fp:
+        plist_data = plistlib.load(fp)
+
+    bundle_id = plist_data.get("CFBundleIdentifier")
+    if bundle_id != "com.h3zord.BrainPanel":
+        print(
+            f"smoke-app: CFBundleIdentifier esperado 'com.h3zord.BrainPanel', obtido '{bundle_id}'",
+            file=sys.stderr,
+        )
+        return 1
+
+    if plist_data.get("CFBundleExecutable") != "Brain Panel":
+        print(
+            f"smoke-app: CFBundleExecutable inesperado: {plist_data.get('CFBundleExecutable')}",
+            file=sys.stderr,
+        )
+        return 1
+
+    if plist_data.get("LSUIElement") is not True:
+        print("smoke-app: LSUIElement deve ser True para aplicativo de barra de menus", file=sys.stderr)
+        return 1
+
+    if not executable_path.is_file() or not os.access(executable_path, os.X_OK):
+        print(f"smoke-app: binário executável ausente ou sem permissão: {executable_path}", file=sys.stderr)
+        return 1
+
+    sessions_dir = isolated_dir / "sessions"
+    projects_dir = isolated_dir / "projects"
+    support_dir = isolated_dir / "support"
+    empty_bin = isolated_dir / "empty-bin"
+    fake_home = isolated_dir / "home"
+    for folder in (sessions_dir, projects_dir, support_dir, empty_bin, fake_home):
+        folder.mkdir(parents=True, exist_ok=True)
+
+    base_env = {
+        "HOME": str(fake_home),
+        "TMPDIR": str(isolated_dir),
+        "PATH": str(empty_bin),
+        "BRAIN_PANEL_CLAUDE_SESSIONS_DIR": str(sessions_dir),
+        "BRAIN_PANEL_CLAUDE_PROJECTS_DIR": str(projects_dir),
+        "BRAIN_PANEL_APP_SUPPORT_DIR": str(support_dir),
+        "BRAIN_PANEL_CLI_SEARCH_PATHS": str(empty_bin),
+    }
+
+    # 1. Boot válido em modo self_check deve sair 0 com log estruturado
+    ok_env = {**base_env, "BRAIN_PANEL_MODE": "self_check"}
+    ok_proc = subprocess.run(
+        [str(executable_path)],
+        env=ok_env,
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+    if ok_proc.returncode != 0:
+        print(
+            f"smoke-app: self_check falhou com código {ok_proc.returncode}: {ok_proc.stderr}",
+            file=sys.stderr,
+        )
+        return 1
+
+    stderr_lines = [line for line in ok_proc.stderr.splitlines() if line.strip()]
+    if not stderr_lines:
+        print("smoke-app: self_check não emitiu evento estruturado no stderr", file=sys.stderr)
+        return 1
+
+    parsed_ok = json.loads(stderr_lines[-1])
+    if parsed_ok.get("event") != "self_check_passed" or parsed_ok.get("fields", {}).get("bundle_id") != "com.h3zord.BrainPanel":
+        print(f"smoke-app: payload inesperado no self_check: {stderr_lines[-1]}", file=sys.stderr)
+        return 1
+
+    # 2. Boot com configuração inválida deve falhar fechado (exit != 0) sem vazar canário
+    canary = "FAKE-CANARIO-SMOKE-778899"
+    bad_env = {**base_env, "BRAIN_PANEL_MODE": canary}
+    bad_proc = subprocess.run(
+        [str(executable_path)],
+        env=bad_env,
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+    if bad_proc.returncode == 0:
+        print("smoke-app: processo subiu com configuração inválida (deveria falhar fechado)", file=sys.stderr)
+        return 1
+
+    combined_output = bad_proc.stdout + "\n" + bad_proc.stderr
+    if canary in combined_output or "FAKE-CANARIO" in combined_output:
+        print("smoke-app: canário de configuração vazou na saída do processo", file=sys.stderr)
+        return 1
+
+    bad_lines = [line for line in bad_proc.stderr.splitlines() if line.strip()]
+    if not bad_lines:
+        print("smoke-app: falha de boot não registrou JSON estruturado", file=sys.stderr)
+        return 1
+
+    parsed_bad = json.loads(bad_lines[-1])
+    if parsed_bad.get("event") != "boot_failed" or parsed_bad.get("error_code") != "CONFIG_INVALID":
+        print(f"smoke-app: log de falha de boot inesperado: {bad_lines[-1]}", file=sys.stderr)
+        return 1
+
+    print("smoke-app: OK (Info.plist, CFBundleIdentifier, binário, self_check isolado e boot fail-closed)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
