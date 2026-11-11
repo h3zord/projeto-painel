@@ -147,7 +147,7 @@ final class UsageStore {
         event: "sessions_refreshed",
         refreshID: correlationID,
         fields: [
-          .collector: "claude_sessions",
+          .collector: "active_sessions",
           .status: "ok",
           .conversationsCount: "\(conversations.count)",
         ]
@@ -159,7 +159,7 @@ final class UsageStore {
         refreshID: correlationID,
         errorCode: appError.code,
         fields: [
-          .collector: "claude_sessions",
+          .collector: "active_sessions",
           .status: "failed",
         ]
       )
@@ -296,7 +296,7 @@ extension UsageStore {
           ClaudeCollector(cliEnvironment: cliEnvironment, clock: clock),
           GeminiCollector(cliEnvironment: cliEnvironment, clock: clock),
         ],
-        conversationCollector: ActiveConversationCollector(config: config),
+        conversationCollector: ActiveConversationCollector(config: config, clock: clock),
         clock: clock,
         logger: resolvedLogger,
         refreshInterval: config.refreshInterval,

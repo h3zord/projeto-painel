@@ -1,6 +1,6 @@
 # Brain Panel
 
-Aplicativo nativo de barra de menus para macOS (`Brain Panel.app`, `com.h3zord.BrainPanel`) que exibe em tempo real as cotas de uso do **Claude** (`claude`) e do **Gemini / Antigravity** (`agy`), além do contexto das **conversas ativas** do Claude Code.
+Aplicativo nativo de barra de menus para macOS (`Brain Panel.app`, `com.h3zord.BrainPanel`) que exibe em tempo real as cotas de uso do **Claude** (`claude`) e do **Gemini / Antigravity** (`agy`), além do contexto das **conversas ativas** do Claude Code e do Antigravity.
 
 O aplicativo reutiliza as sessões já autenticadas nas ferramentas de linha de comando locais e inspeciona arquivos locais em modo estritamente somente-leitura — **sem pedir chaves de API, sem enviar prompts e sem gastar tokens**.
 
@@ -14,9 +14,9 @@ O aplicativo reutiliza as sessões já autenticadas nas ferramentas de linha de 
 - **Aba Cotas**
   - Disponibilidade da janela de 5 horas e semanal para **Claude** e **Gemini**, com detalhamento por grupo de modelos e tempo restante até a renovação.
   - Menor porcentagem restante visível diretamente no ícone da barra de menus.
-  - Resumo rápido das conversas ativas do Claude Code.
+  - Resumo rápido das conversas ativas do Claude Code e do Antigravity.
 - **Aba Sessões**
-  - Lista de conversas do Claude Code com processo vivo (`kill -0`), lendo os últimos 3 MB do transcript `.jsonl` correspondente para estimar o tamanho atual do contexto e sinalizar limiares de atenção (300 mil tokens) e compactação (500 mil tokens).
+  - Lista de conversas do Claude Code (processo vivo via `kill -0`, janela real em `~/.cache/claude-context/<id>.json` ou janela presumida de `1.0M`) e do Antigravity (`agy`, janela `1_048_576` e nomes do `brain-sessions`), lendo até os últimos 4 MB de cada transcript `.jsonl` para calcular a ocupação percentual do contexto, detectar compactações automáticas (`compact_boundary` / `CHECKPOINT`) e sinalizar os limiares do Brain em **70%** (atenção) e **80%** (compactar no próximo ponto natural).
 
 ---
 
@@ -76,7 +76,7 @@ Toda variável `BRAIN_PANEL_*` é validada de forma estrita na inicialização p
 - `BRAIN_PANEL_MODE`: `live` (padrão), `isolated`, `self_check` ou `testing`.
 - `BRAIN_PANEL_REFRESH_INTERVAL_SECONDS`: intervalo periódico de atualização de cotas (`10` a `3600`, padrão `300`).
 - `BRAIN_PANEL_CACHE_TTL_SECONDS`: tempo máximo de cache ao abrir o painel (`1` a `600`, padrão `60`).
-- `BRAIN_PANEL_CLAUDE_SESSIONS_DIR`, `BRAIN_PANEL_CLAUDE_PROJECTS_DIR`, `BRAIN_PANEL_APP_SUPPORT_DIR`, `BRAIN_PANEL_CLI_SEARCH_PATHS`: caminhos absolutos opcionais usados para isolamento ou customização.
+- `BRAIN_PANEL_CLAUDE_SESSIONS_DIR`, `BRAIN_PANEL_CLAUDE_PROJECTS_DIR`, `BRAIN_PANEL_CLAUDE_CONTEXT_CACHE_DIR`, `BRAIN_PANEL_ANTIGRAVITY_DIR`, `BRAIN_PANEL_BRAIN_SESSIONS_STATE_DIR`, `BRAIN_PANEL_APP_SUPPORT_DIR`, `BRAIN_PANEL_CLI_SEARCH_PATHS`: caminhos absolutos opcionais usados para isolamento ou customização.
 
 ---
 
@@ -86,7 +86,8 @@ Toda variável `BRAIN_PANEL_*` é validada de forma estrita na inicialização p
 | --- | --- | --- |
 | **Claude (Cota)** | `claude` | Inspeciona `/usage` em pseudo-terminal local e encerra a sessão |
 | **Gemini (Cota)** | `agy` | Inspeciona `/quota` em pseudo-terminal local e encerra a sessão |
-| **Sessões Ativas** | `~/.claude/sessions/*.json` e `~/.claude/projects/**/*.jsonl` | Confere `pid` ativo e lê o final do `.jsonl` em modo somente-leitura |
+| **Sessões Ativas (Claude)** | `~/.claude/sessions/*.json`, `~/.claude/projects/**/*.jsonl` e `~/.cache/claude-context/*.json` | Confere `pid` ativo, janela de contexto registrada e últimos 4 MB do `.jsonl` em modo somente-leitura |
+| **Sessões Ativas (Antigravity)** | `~/.gemini/antigravity-cli/brain/*/.system_generated/logs/transcript*.jsonl`, `~/.local/state/brain-sessions/antigravity-names.json` e `conversation_summaries.db` | Filtra transcripts recentes pelo `Clock`, lê últimos 4 MB do `.jsonl` e consulta nomes em modo somente-leitura (`immutable=1`) |
 
 ---
 

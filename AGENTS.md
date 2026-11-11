@@ -1,6 +1,6 @@
 # Brain Panel — Regras do Projeto
 
-Aplicativo nativo de barra de menus para macOS (`Brain Panel.app`, `com.h3zord.BrainPanel`) para acompanhamento em tempo real das cotas de uso das CLIs locais (`claude` e `agy`) e do contexto das conversas ativas do Claude Code, operando em modo estritamente somente-leitura e sem consumir tokens.
+Aplicativo nativo de barra de menus para macOS (`Brain Panel.app`, `com.h3zord.BrainPanel`) para acompanhamento em tempo real das cotas de uso das CLIs locais (`claude` e `agy`) e do contexto das conversas ativas do Claude Code e do Antigravity, operando em modo estritamente somente-leitura e sem consumir tokens.
 
 - **Plano do projeto:** [#1 — Brain Panel](https://github.com/h3zord/projeto-painel/issues/1)
 - **Metodologia verificada:** `dev-methodology: 8267b37`
@@ -22,7 +22,7 @@ Aplicativo nativo de barra de menus para macOS (`Brain Panel.app`, `com.h3zord.B
 ## Regras próprias deste repositório
 
 - **Fila obrigatória para portões pesados:** `make ci` e `make mutation` rodam exclusivamente via `~/Brain/bin/brain-ci run -- make ci` e `~/Brain/bin/brain-ci run -- make mutation`.
-- **Isolamento total em testes e CI:** `make test`, `make check`, `make ci` e `make mutation` nunca invocam `claude`, `agy` ou `launchctl` reais, nunca leem `~/.claude` ou `~/.local/state` reais e nunca escrevem em `/Applications` ou `~/Library/LaunchAgents`.
+- **Isolamento total em testes e CI:** `make test`, `make check`, `make ci` e `make mutation` nunca invocam `claude`, `agy` ou `launchctl` reais, nunca leem `~/.claude`, `~/.cache`, `~/.gemini` ou `~/.local/state` reais e nunca escrevem em `/Applications` ou `~/Library/LaunchAgents`.
 - **Artefatos temporários:** todo `DerivedData`, bundle de teste e diretório temporário mora dentro de `local/tmp/`.
 - **Repositório público (`h3zord/projeto-painel`):** proibido incluir segredos, e-mails pessoais, caminhos privados reais da máquina ou capturas brutas com dados sensíveis em código, fixtures, logs ou documentação.
 - **Adaptação de plataforma e arquitetura:** registradas em `docs/adr/0001-plataforma-macos-e-ci.md` e `docs/adr/0002-arquitetura-camadas-erros-e-fronteiras.md`.
@@ -33,7 +33,7 @@ Aplicativo nativo de barra de menus para macOS (`Brain Panel.app`, `com.h3zord.B
 - **Cotas, menor disponibilidade, estado defasado (`stale`) e janelas de renovação:** `BrainPanelTests/Unit/ProviderUsageTests.swift`
 - **Parsing somente-leitura das telas `/usage` e `/quota` (com grupos dinâmicos):** `BrainPanelTests/Unit/ClaudeUsageParserTests.swift` e `BrainPanelTests/Unit/GeminiQuotaParserTests.swift`
 - **Limpeza ANSI/VT100 e tela virtual de terminal:** `BrainPanelTests/Unit/TerminalTextAndScreenTests.swift`
-- **Estado de conversas ativas, limiares de contexto e extração de transcript JSONL:** `BrainPanelTests/Unit/ActiveConversationDomainTests.swift` e `BrainPanelTests/Integration/ActiveConversationCollectorIntegrationTests.swift`
+- **Estado de conversas ativas, compactação (`compact_boundary`/`CHECKPOINT`), limiares percentuais de contexto (`70%`/`80%`) e extração de transcript JSONL:** `BrainPanelTests/Unit/ActiveConversationDomainTests.swift` e `BrainPanelTests/Integration/ActiveConversationCollectorIntegrationTests.swift`
 - **Cache por relógio injetado, transição para leitura defasada (`stale`) em erro, concorrência e cancelamento no `deinit`:** `BrainPanelTests/Unit/UsageStoreTests.swift`
 - **Configuração validada no boot (fail-closed) e códigos de erro enumerados:** `BrainPanelTests/Unit/AppConfigAndErrorTests.swift`
 - **Não vazamento de dados sensíveis em erros ou logs estruturados (canário):** `BrainPanelTests/Unit/SecurityCanaryTests.swift`

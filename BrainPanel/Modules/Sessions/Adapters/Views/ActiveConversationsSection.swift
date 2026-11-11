@@ -2,16 +2,21 @@ import SwiftUI
 
 struct SessionsTabView: View {
   let conversations: [ActiveConversation]
+  let referenceDate: Date
 
   var body: some View {
     VStack(spacing: 8.5) {
-      ActiveConversationsSection(conversations: conversations)
+      ActiveConversationsSection(
+        conversations: conversations,
+        referenceDate: referenceDate
+      )
     }
   }
 }
 
 struct ActiveConversationsSection: View {
   let conversations: [ActiveConversation]
+  let referenceDate: Date
 
   private var countLabel: String {
     switch conversations.count {
@@ -39,7 +44,7 @@ struct ActiveConversationsSection: View {
       }
 
       if conversations.isEmpty {
-        Text("Nenhuma sessão ativa do Claude Code no momento.")
+        Text("Nenhuma sessão ativa de Claude ou Antigravity no momento.")
           .font(.caption2)
           .foregroundStyle(.tertiary)
           .frame(maxWidth: .infinity, alignment: .leading)
@@ -47,7 +52,10 @@ struct ActiveConversationsSection: View {
       } else {
         VStack(spacing: 8) {
           ForEach(conversations) { conversation in
-            ActiveConversationRow(conversation: conversation)
+            ActiveConversationRow(
+              conversation: conversation,
+              referenceDate: referenceDate
+            )
           }
         }
       }
@@ -63,6 +71,7 @@ struct ActiveConversationsSection: View {
 
 private struct ActiveConversationRow: View {
   let conversation: ActiveConversation
+  let referenceDate: Date
 
   private var providerColor: Color {
     switch conversation.tint {
@@ -119,21 +128,21 @@ private struct ActiveConversationRow: View {
 
         Spacer(minLength: 4)
 
-        Text("\(conversation.formattedTokens) tokens")
+        Text(conversation.headlineMetric)
           .font(.caption.monospacedDigit().weight(.semibold))
-          .foregroundStyle(statusColor)
+          .foregroundStyle(conversation.isCompacted ? .secondary : statusColor)
       }
 
-      ProgressView(value: conversation.fractionOfHardLimit)
+      ProgressView(value: conversation.usageFraction)
         .tint(statusColor)
 
       HStack {
-        Text(conversation.statusDetail)
+        Text(conversation.statusDetail(now: referenceDate))
           .foregroundStyle(conversation.statusLevel == .normal ? .secondary : statusColor)
 
-        Spacer()
+        Spacer(minLength: 4)
 
-        Text("Teto 500 mil")
+        Text(conversation.windowSummary)
           .foregroundStyle(.tertiary)
       }
       .font(.caption2)

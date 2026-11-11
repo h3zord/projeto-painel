@@ -64,17 +64,17 @@ final class ArchitectureTests: XCTestCase {
       ),
       SourceUnit(
         relativePath: "Modules/Sessions/Domain/ActiveConversation.swift",
-        content: "struct ActiveConversation { let leaked: ProviderUsage? }"
+        content: "import SQLite3\nstruct ActiveConversation { let leaked: ProviderUsage? }"
       ),
       SourceUnit(
         relativePath: "Modules/Sessions/Application/ConversationCollecting.swift",
-        content: "protocol ConversationCollecting { func bad(_ c: ClaudeCollector) }"
+        content: "import SQLite3\nprotocol ConversationCollecting { func bad(_ c: ClaudeCollector) }"
       ),
     ]
 
     let violations = Self.evaluateArchitecture(units: syntheticUnits)
     XCTAssertGreaterThanOrEqual(
-      violations.count, 4, "Esperava flagrar todas as violações plantadas: \(violations)")
+      violations.count, 6, "Esperava flagrar todas as violações plantadas: \(violations)")
   }
 
   static func evaluateArchitecture(units: [SourceUnit]) -> [String] {
@@ -104,8 +104,10 @@ final class ArchitectureTests: XCTestCase {
       }
     }
 
-    let domainForbiddenImports: Set<String> = ["SwiftUI", "AppKit", "Darwin", "OSLog", "Observation"]
-    let applicationForbiddenImports: Set<String> = ["SwiftUI", "AppKit", "Darwin"]
+    let domainForbiddenImports: Set<String> = [
+      "SwiftUI", "AppKit", "Darwin", "OSLog", "Observation", "SQLite3",
+    ]
+    let applicationForbiddenImports: Set<String> = ["SwiftUI", "AppKit", "Darwin", "SQLite3"]
 
     let domainForbiddenCategories: Set<String> = [
       "module.application",

@@ -42,10 +42,13 @@ test:
 	trap cleanup EXIT; \
 	trap 'exit 130' INT; \
 	trap 'exit 143' TERM; \
-	mkdir -p "$$run_dir/isolated/sessions" "$$run_dir/isolated/projects" "$$run_dir/isolated/support" "$$run_dir/isolated/empty-bin"; \
+	mkdir -p "$$run_dir/isolated/sessions" "$$run_dir/isolated/projects" "$$run_dir/isolated/claude-context" "$$run_dir/isolated/antigravity-cli" "$$run_dir/isolated/brain-sessions" "$$run_dir/isolated/support" "$$run_dir/isolated/empty-bin"; \
 	BRAIN_PANEL_MODE=testing \
 	BRAIN_PANEL_CLAUDE_SESSIONS_DIR="$$(pwd)/$$run_dir/isolated/sessions" \
 	BRAIN_PANEL_CLAUDE_PROJECTS_DIR="$$(pwd)/$$run_dir/isolated/projects" \
+	BRAIN_PANEL_CLAUDE_CONTEXT_CACHE_DIR="$$(pwd)/$$run_dir/isolated/claude-context" \
+	BRAIN_PANEL_ANTIGRAVITY_DIR="$$(pwd)/$$run_dir/isolated/antigravity-cli" \
+	BRAIN_PANEL_BRAIN_SESSIONS_STATE_DIR="$$(pwd)/$$run_dir/isolated/brain-sessions" \
 	BRAIN_PANEL_APP_SUPPORT_DIR="$$(pwd)/$$run_dir/isolated/support" \
 	BRAIN_PANEL_CLI_SEARCH_PATHS="$$(pwd)/$$run_dir/isolated/empty-bin" \
 	xcodebuild test $(XCODE_BASE_ARGS) -derivedDataPath "$$run_dir/DerivedData" -only-testing:BrainPanelUnitTests $(XCODE_TEST_ARGS) CODE_SIGNING_ALLOWED=NO SWIFT_TREAT_WARNINGS_AS_ERRORS=YES
@@ -104,10 +107,13 @@ ci: check
 	trap cleanup EXIT; \
 	trap 'exit 130' INT; \
 	trap 'exit 143' TERM; \
-	mkdir -p "$$run_dir/isolated/sessions" "$$run_dir/isolated/projects" "$$run_dir/isolated/support" "$$run_dir/isolated/empty-bin" "$$run_dir/smoke"; \
+	mkdir -p "$$run_dir/isolated/sessions" "$$run_dir/isolated/projects" "$$run_dir/isolated/claude-context" "$$run_dir/isolated/antigravity-cli" "$$run_dir/isolated/brain-sessions" "$$run_dir/isolated/support" "$$run_dir/isolated/empty-bin" "$$run_dir/smoke"; \
 	BRAIN_PANEL_MODE=testing \
 	BRAIN_PANEL_CLAUDE_SESSIONS_DIR="$$(pwd)/$$run_dir/isolated/sessions" \
 	BRAIN_PANEL_CLAUDE_PROJECTS_DIR="$$(pwd)/$$run_dir/isolated/projects" \
+	BRAIN_PANEL_CLAUDE_CONTEXT_CACHE_DIR="$$(pwd)/$$run_dir/isolated/claude-context" \
+	BRAIN_PANEL_ANTIGRAVITY_DIR="$$(pwd)/$$run_dir/isolated/antigravity-cli" \
+	BRAIN_PANEL_BRAIN_SESSIONS_STATE_DIR="$$(pwd)/$$run_dir/isolated/brain-sessions" \
 	BRAIN_PANEL_APP_SUPPORT_DIR="$$(pwd)/$$run_dir/isolated/support" \
 	BRAIN_PANEL_CLI_SEARCH_PATHS="$$(pwd)/$$run_dir/isolated/empty-bin" \
 	xcodebuild test $(XCODE_BASE_ARGS) -derivedDataPath "$$run_dir/DerivedData" -only-testing:BrainPanelIntegrationTests $(XCODE_TEST_ARGS) CODE_SIGNING_ALLOWED=NO SWIFT_TREAT_WARNINGS_AS_ERRORS=YES; \

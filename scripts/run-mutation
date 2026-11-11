@@ -84,16 +84,16 @@ MUTANTS: list[MutantSpec] = [
     MutantSpec(
         id="M08",
         relative_file="BrainPanel/Modules/Sessions/Domain/ActiveConversation.swift",
-        description="fronteira exata do hardLimit em 500 mil tokens",
-        original="if contextTokens >= Self.hardLimit {",
-        replacement="if contextTokens > Self.hardLimit {",
+        description="fronteira exata de >= 80% para hardLimit em ActiveConversation",
+        original="if scaledTokens >= window * Int64(Self.hardLimitPercentage) {",
+        replacement="if scaledTokens > window * Int64(Self.hardLimitPercentage) {",
     ),
     MutantSpec(
         id="M09",
-        relative_file="BrainPanel/Modules/Sessions/Domain/ActiveConversation.swift",
-        description="soma de cache_read_input_tokens no ClaudeTranscriptParser",
-        original="return (input ?? 0) + (cacheRead ?? 0) + (cacheCreation ?? 0)",
-        replacement="return (input ?? 0) + (cacheCreation ?? 0)",
+        relative_file="BrainPanel/Modules/Sessions/Domain/SessionTranscriptParsers.swift",
+        description="soma de cacheReadInputTokens no ClaudeTranscriptParser",
+        original="+ (usage.cacheReadInputTokens ?? 0)",
+        replacement="+ 0",
     ),
     MutantSpec(
         id="M10",
@@ -144,6 +144,41 @@ MUTANTS: list[MutantSpec] = [
         original='if line.localizedCaseInsensitiveContains("within each group") {',
         replacement='if line.localizedCaseInsensitiveContains("__nunca_delimita__") {',
     ),
+    MutantSpec(
+        id="M17",
+        relative_file="BrainPanel/Modules/Sessions/Domain/ActiveConversation.swift",
+        description="fronteira exata de >= 70% para softWarning em ActiveConversation",
+        original="if scaledTokens >= window * Int64(Self.softWarningPercentage) {",
+        replacement="if scaledTokens > window * Int64(Self.softWarningPercentage) {",
+    ),
+    MutantSpec(
+        id="M18",
+        relative_file="BrainPanel/Modules/Sessions/Domain/ActiveConversation.swift",
+        description="proteção de estado .normal em sessão recém-compactada",
+        original="guard !isCompacted, let contextTokens else { return .normal }",
+        replacement="guard let contextTokens else { return .normal }",
+    ),
+    MutantSpec(
+        id="M19",
+        relative_file="BrainPanel/Modules/Sessions/Domain/SessionTranscriptParsers.swift",
+        description="detecção de compact_boundary no ClaudeTranscriptParser",
+        original='if envelope.type == "system", envelope.subtype == "compact_boundary" {',
+        replacement='if envelope.type == "system", envelope.subtype == "__nunca_compacta__" {',
+    ),
+    MutantSpec(
+        id="M20",
+        relative_file="BrainPanel/Modules/Sessions/Domain/SessionTranscriptParsers.swift",
+        description="detecção de CHECKPOINT no AntigravityTranscriptParser",
+        original='if envelope.type == "CHECKPOINT" {',
+        replacement='if envelope.type == "__NUNCA_CHECKPOINT__" {',
+    ),
+    MutantSpec(
+        id="M21",
+        relative_file="BrainPanel/Modules/Sessions/Domain/SessionTranscriptParsers.swift",
+        description="soma de cache_read_tokens no AntigravityTranscriptParser",
+        original="let total = (envelope.inputTokens ?? 0) + (envelope.cacheReadTokens ?? 0)",
+        replacement="let total = (envelope.inputTokens ?? 0)",
+    ),
 ]
 
 
@@ -154,6 +189,9 @@ def run_unit_tests(workspace: Path, derived_data: Path, isolated_env_dir: Path) 
             "BRAIN_PANEL_MODE": "testing",
             "BRAIN_PANEL_CLAUDE_SESSIONS_DIR": str(isolated_env_dir / "sessions"),
             "BRAIN_PANEL_CLAUDE_PROJECTS_DIR": str(isolated_env_dir / "projects"),
+            "BRAIN_PANEL_CLAUDE_CONTEXT_CACHE_DIR": str(isolated_env_dir / "claude-context"),
+            "BRAIN_PANEL_ANTIGRAVITY_DIR": str(isolated_env_dir / "antigravity-cli"),
+            "BRAIN_PANEL_BRAIN_SESSIONS_STATE_DIR": str(isolated_env_dir / "brain-sessions"),
             "BRAIN_PANEL_APP_SUPPORT_DIR": str(isolated_env_dir / "support"),
             "BRAIN_PANEL_CLI_SEARCH_PATHS": str(isolated_env_dir / "empty-bin"),
         }
@@ -251,7 +289,15 @@ def main() -> int:
     signal.signal(signal.SIGTERM, handle_signal)
 
     try:
-        for sub in ("sessions", "projects", "support", "empty-bin"):
+        for sub in (
+            "sessions",
+            "projects",
+            "claude-context",
+            "antigravity-cli",
+            "brain-sessions",
+            "support",
+            "empty-bin",
+        ):
             (isolated_env_dir / sub).mkdir(parents=True, exist_ok=True)
         workspace = prepare_workspace(repo_root, sandbox_root)
 
