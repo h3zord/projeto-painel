@@ -392,11 +392,15 @@ nonisolated struct AppConfig: Equatable, Sendable {
       !raw.isEmpty,
       raw.count <= maxPathLength,
       !raw.contains("\0"),
+      !raw.contains("%"),
+      !raw.contains("?"),
+      !raw.contains("\\"),
       raw.allSatisfy({ !$0.isWhitespace && !$0.isNewline }),
       let components = URLComponents(string: raw),
       components.scheme?.lowercased() == "http",
       components.user == nil,
       components.password == nil,
+      components.query == nil,
       let host = components.host?.lowercased(),
       host == "127.0.0.1" || host == "localhost"
     else {
@@ -404,9 +408,10 @@ nonisolated struct AppConfig: Equatable, Sendable {
     }
 
     let withoutScheme = String(raw.dropFirst("http://".count))
-    let authority =
-      withoutScheme.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false)
-      .first.map(String.init) ?? ""
+    let authority = String(withoutScheme.prefix { $0 != "/" && $0 != "#" })
+    guard !authority.contains("@") else {
+      throw AppError.invalidConfiguration(setting: setting)
+    }
     if authority.contains(":") {
       guard let port = components.port, (1...65_535).contains(port) else {
         throw AppError.invalidConfiguration(setting: setting)
@@ -415,10 +420,74 @@ nonisolated struct AppConfig: Equatable, Sendable {
       throw AppError.invalidConfiguration(setting: setting)
     }
 
-    guard let url = components.url else {
+    let hashCount = raw.filter { $0 == "#" }.count
+    guard
+      hashCount <= 1,
+      isSafeLoopbackURLPath(components.path),
+      isSafeLoopbackURLFragment(components.fragment, hasHashInRaw: hashCount == 1),
+      let url = components.url
+    else {
       throw AppError.invalidConfiguration(setting: setting)
     }
     return url
+  }
+
+  private static func isSafeLoopbackURLPath(_ path: String) -> Bool {
+    if path.isEmpty || path == "/" {
+      return true
+    }
+    guard path.hasPrefix("/") else {
+      return false
+    }
+    let body = path.hasSuffix("/") ? path.dropFirst().dropLast() : path.dropFirst()
+    guard !body.isEmpty else {
+      return false
+    }
+    let urlSegments = body.split(separator: "/", omittingEmptySubsequences: false)
+    guard !urlSegments.contains(where: { $0 == "." || $0 == ".." || $0.contains("..") }) else {
+      return false
+    }
+    return urlSegments.allSatisfy { segment in
+      guard
+        let first = segment.unicodeScalars.first,
+        segment.unicodeScalars.count <= 81,
+        isLoopbackSegmentStart(first)
+      else {
+        return false
+      }
+      return segment.unicodeScalars.allSatisfy(isLoopbackSegmentScalar)
+    }
+  }
+
+  private static func isSafeLoopbackURLFragment(_ fragment: String?, hasHashInRaw: Bool) -> Bool {
+    guard hasHashInRaw else {
+      return fragment == nil
+    }
+    guard
+      let fragment,
+      !fragment.isEmpty,
+      fragment.unicodeScalars.count <= 64
+    else {
+      return false
+    }
+    return fragment.unicodeScalars.allSatisfy { scalar in
+      (scalar.value >= 0x61 && scalar.value <= 0x7A)
+        || (scalar.value >= 0x41 && scalar.value <= 0x5A)
+        || (scalar.value >= 0x30 && scalar.value <= 0x39)
+        || scalar == "_"
+        || scalar == "-"
+    }
+  }
+
+  private static func isLoopbackSegmentStart(_ scalar: UnicodeScalar) -> Bool {
+    (scalar.value >= 0x61 && scalar.value <= 0x7A)
+      || (scalar.value >= 0x41 && scalar.value <= 0x5A)
+      || (scalar.value >= 0x30 && scalar.value <= 0x39)
+      || scalar == "_"
+  }
+
+  private static func isLoopbackSegmentScalar(_ scalar: UnicodeScalar) -> Bool {
+    isLoopbackSegmentStart(scalar) || scalar == "." || scalar == "-"
   }
 
   private static func parseSearchPaths(

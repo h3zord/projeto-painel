@@ -263,6 +263,34 @@ MUTANTS: list[MutantSpec] = [
         original="lastConversationsError = appError",
         replacement="lastConversationsError = nil",
     ),
+    MutantSpec(
+        id="M34",
+        relative_file="BrainPanel/Shared/Config/AppConfig.swift",
+        description="bloqueio de segmentos '.' e '..' no caminho de URLs loopback em AppConfig",
+        original='guard !urlSegments.contains(where: { $0 == "." || $0 == ".." || $0.contains("..") }) else {',
+        replacement='guard !urlSegments.contains(where: { $0 == "__nunca__" }) else {',
+    ),
+    MutantSpec(
+        id="M35",
+        relative_file="BrainPanel/Modules/Brain/Domain/BrainPagesNavigator.swift",
+        description="bloqueio de derivação de link a partir de texto corporativo (flexograv) em BrainPagesNavigator",
+        original="!BrainPrivacyGuard.isCorporateScope(text),",
+        replacement="!text.isEmpty,",
+    ),
+    MutantSpec(
+        id="M36",
+        relative_file="BrainPanel/Modules/Brain/Domain/BrainWaitingEvaluator.swift",
+        description="supressão de project corporativo (flexograv) ao construir PendingPrompt",
+        original="let safeProject =\n        isCorporate ? nil : BrainPrivacyGuard.sanitizeSingleLine(record.project, maxLength: 120)",
+        replacement="let safeProject = BrainPrivacyGuard.sanitizeSingleLine(record.project, maxLength: 120)",
+    ),
+    MutantSpec(
+        id="M37",
+        relative_file="BrainPanel/Modules/Brain/Domain/BrainPagesNavigator.swift",
+        description="rejeição de '..' em slugs de escopo e página do brain-pages",
+        original='!segment.contains(".."),',
+        replacement='!segment.contains("__nunca__"),',
+    ),
 ]
 
 

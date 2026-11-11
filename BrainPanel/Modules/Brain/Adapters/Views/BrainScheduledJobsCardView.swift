@@ -3,6 +3,9 @@ import SwiftUI
 struct BrainScheduledJobsCardView: View {
   let state: BrainSectionState<ScheduledJobsState>
   let now: Date
+  let brainPagesURL: URL
+  let canOpenPages: Bool
+  let openURLAction: (URL) -> Void
 
   private func hasJobFailure(_ scheduled: ScheduledJobsState) -> Bool {
     if scheduled.restoreRehearsal?.isPassing == false {
@@ -46,7 +49,19 @@ struct BrainScheduledJobsCardView: View {
       iconTone: cardTone == .critical ? .critical : .active,
       badgeText: badgeInfo.text,
       badgeTone: badgeInfo.tone,
-      cardTone: cardTone
+      cardTone: cardTone,
+      headerAccessory: {
+        BrainInlineLinkButton(
+          title: "Agenda",
+          destinationURL: BrainPagesNavigator.resolveSection(
+            .scheduledJobs,
+            baseURL: brainPagesURL
+          ),
+          isEnabled: canOpenPages,
+          accessibilityLabel: "Abrir seção de jobs agendados no brain-pages",
+          action: openURLAction
+        )
+      }
     ) {
       switch state {
       case .failed(let appError):

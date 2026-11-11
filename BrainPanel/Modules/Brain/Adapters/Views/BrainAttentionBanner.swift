@@ -118,36 +118,110 @@ struct BrainSectionBadge: View {
   }
 }
 
-struct BrainSectionCard<Content: View>: View {
+struct BrainInlineLinkButton: View {
+  let title: String
+  let destinationURL: URL?
+  let isEnabled: Bool
+  let accessibilityLabel: String
+  let action: (URL) -> Void
+
+  private var effectiveDestination: URL? {
+    guard isEnabled, let destinationURL else { return nil }
+    return destinationURL
+  }
+
+  var body: some View {
+    Button {
+      if let effectiveDestination {
+        action(effectiveDestination)
+      }
+    } label: {
+      HStack(spacing: 2.5) {
+        Text(title)
+          .font(.system(size: 9.5, weight: .semibold))
+        Image(systemName: "arrow.up.right")
+          .font(.system(size: 7.5, weight: .bold))
+      }
+      .foregroundStyle(effectiveDestination != nil ? Color.blue : Color.secondary.opacity(0.45))
+      .padding(.horizontal, 5.5)
+      .padding(.vertical, 2)
+      .background(
+        (effectiveDestination != nil ? Color.blue.opacity(0.11) : Color.primary.opacity(0.05)),
+        in: Capsule()
+      )
+      .overlay {
+        Capsule()
+          .stroke(
+            effectiveDestination != nil ? Color.blue.opacity(0.22) : Color.primary.opacity(0.08),
+            lineWidth: 0.5
+          )
+      }
+    }
+    .buttonStyle(.plain)
+    .disabled(effectiveDestination == nil)
+    .help(effectiveDestination?.absoluteString ?? "URL loopback indisponível")
+    .accessibilityLabel(accessibilityLabel)
+    .accessibilityHint(
+      effectiveDestination.map { "Abre \($0.absoluteString) no navegador" } ?? ""
+    )
+  }
+}
+
+struct BrainSectionCard<Accessory: View, Content: View>: View {
   let title: String
   let iconName: String
   let iconTone: BrainCardTone
   let badgeText: String
   let badgeTone: BrainCardTone
   let cardTone: BrainCardTone
+  @ViewBuilder let headerAccessory: () -> Accessory
   @ViewBuilder let content: () -> Content
+
+  init(
+    title: String,
+    iconName: String,
+    iconTone: BrainCardTone,
+    badgeText: String,
+    badgeTone: BrainCardTone,
+    cardTone: BrainCardTone,
+    @ViewBuilder headerAccessory: @escaping () -> Accessory,
+    @ViewBuilder content: @escaping () -> Content
+  ) {
+    self.title = title
+    self.iconName = iconName
+    self.iconTone = iconTone
+    self.badgeText = badgeText
+    self.badgeTone = badgeTone
+    self.cardTone = cardTone
+    self.headerAccessory = headerAccessory
+    self.content = content
+  }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
-      HStack(spacing: 6) {
-        Image(systemName: iconName)
-          .font(.system(size: 10, weight: .semibold))
-          .foregroundStyle(iconTone == .neutral ? Color.secondary : iconTone.color)
-          .frame(width: 19, height: 19)
-          .background(
-            (iconTone == .neutral ? Color.primary.opacity(0.08) : iconTone.color.opacity(0.14)),
-            in: RoundedRectangle(cornerRadius: 4.5)
-          )
+      HStack(spacing: 5) {
+        HStack(spacing: 6) {
+          Image(systemName: iconName)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(iconTone == .neutral ? Color.secondary : iconTone.color)
+            .frame(width: 19, height: 19)
+            .background(
+              (iconTone == .neutral ? Color.primary.opacity(0.08) : iconTone.color.opacity(0.14)),
+              in: RoundedRectangle(cornerRadius: 4.5)
+            )
 
-        Text(title)
-          .font(.caption.weight(.semibold))
-          .lineLimit(1)
+          Text(title)
+            .font(.caption.weight(.semibold))
+            .lineLimit(1)
 
-        Spacer(minLength: 4)
+          Spacer(minLength: 4)
 
-        BrainSectionBadge(text: badgeText, tone: badgeTone)
+          BrainSectionBadge(text: badgeText, tone: badgeTone)
+        }
+        .accessibilityElement(children: .combine)
+
+        headerAccessory()
       }
-      .accessibilityElement(children: .combine)
 
       content()
     }
@@ -158,6 +232,29 @@ struct BrainSectionCard<Content: View>: View {
       RoundedRectangle(cornerRadius: 10)
         .stroke(cardTone.borderColor, lineWidth: 0.6)
     }
+  }
+}
+
+extension BrainSectionCard where Accessory == EmptyView {
+  init(
+    title: String,
+    iconName: String,
+    iconTone: BrainCardTone,
+    badgeText: String,
+    badgeTone: BrainCardTone,
+    cardTone: BrainCardTone,
+    @ViewBuilder content: @escaping () -> Content
+  ) {
+    self.init(
+      title: title,
+      iconName: iconName,
+      iconTone: iconTone,
+      badgeText: badgeText,
+      badgeTone: badgeTone,
+      cardTone: cardTone,
+      headerAccessory: { EmptyView() },
+      content: content
+    )
   }
 }
 

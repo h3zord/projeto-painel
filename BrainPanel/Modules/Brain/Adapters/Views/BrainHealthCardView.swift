@@ -3,6 +3,9 @@ import SwiftUI
 struct BrainHealthCardView: View {
   let state: BrainSectionState<HealthAndBackupState>
   let now: Date
+  let brainPagesURL: URL
+  let canOpenPages: Bool
+  let openURLAction: (URL) -> Void
 
   private func hasCriticalHealthIssue(_ health: HealthAndBackupState) -> Bool {
     if !health.doctorFailures.isEmpty { return true }
@@ -57,7 +60,28 @@ struct BrainHealthCardView: View {
       iconTone: badgeInfo.tone,
       badgeText: badgeInfo.text,
       badgeTone: badgeInfo.tone,
-      cardTone: cardTone
+      cardTone: cardTone,
+      headerAccessory: {
+        HStack(spacing: 4) {
+          BrainInlineLinkButton(
+            title: "Saúde",
+            destinationURL: BrainPagesNavigator.resolveSection(.health, baseURL: brainPagesURL),
+            isEnabled: canOpenPages,
+            accessibilityLabel: "Abrir seção de saúde no brain-pages",
+            action: openURLAction
+          )
+          BrainInlineLinkButton(
+            title: "Backup",
+            destinationURL: BrainPagesNavigator.resolveSection(
+              .backupDrive,
+              baseURL: brainPagesURL
+            ),
+            isEnabled: canOpenPages,
+            accessibilityLabel: "Abrir página de backup no brain-pages",
+            action: openURLAction
+          )
+        }
+      }
     ) {
       switch state {
       case .failed(let appError):

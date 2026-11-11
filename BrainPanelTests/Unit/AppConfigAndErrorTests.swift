@@ -156,6 +156,22 @@ final class AppConfigAndErrorTests: XCTestCase {
       expectedSetting: "BRAIN_PANEL_BRAIN_PAGES_URL"
     )
     assertConfigFails(
+      environment: ["BRAIN_PANEL_BRAIN_PAGES_URL": "http://127.0.0.1:4780/../secreto"],
+      expectedSetting: "BRAIN_PANEL_BRAIN_PAGES_URL"
+    )
+    assertConfigFails(
+      environment: ["BRAIN_PANEL_BRAIN_PAGES_URL": "http://127.0.0.1:4780/%2e%2e/secreto"],
+      expectedSetting: "BRAIN_PANEL_BRAIN_PAGES_URL"
+    )
+    assertConfigFails(
+      environment: ["BRAIN_PANEL_BRAIN_PAGES_URL": "http://127.0.0.1:4780/?redirect=https://x.io"],
+      expectedSetting: "BRAIN_PANEL_BRAIN_PAGES_URL"
+    )
+    assertConfigFails(
+      environment: ["BRAIN_PANEL_BRAIN_PAGES_URL": "http://127.0.0.1:4780/#../invalido"],
+      expectedSetting: "BRAIN_PANEL_BRAIN_PAGES_URL"
+    )
+    assertConfigFails(
       environment: ["BRAIN_PANEL_BRAIN_PAGES_URL": ""],
       expectedSetting: "BRAIN_PANEL_BRAIN_PAGES_URL"
     )
@@ -166,6 +182,10 @@ final class AppConfigAndErrorTests: XCTestCase {
       "http://127.0.0.1:4780/",
       "http://localhost:4780/",
       "http://localhost:9000/painel",
+      "http://127.0.0.1:4780/fila",
+      "http://127.0.0.1:4780/brain/backup-drive",
+      "http://127.0.0.1:4780/#esperando",
+      "http://localhost:4780/projeto-painel/_arquivo/doc-1#secao_2-a",
       "http://127.0.0.1",
     ] {
       let parsed = try AppConfig.parse(
@@ -184,14 +204,40 @@ final class AppConfigAndErrorTests: XCTestCase {
 
   func testBrainTabViewOpenerOnlyDispatchesValidatedLoopbackURLs() throws {
     var openedURLs: [URL] = []
-    let safeURL = try XCTUnwrap(URL(string: "http://127.0.0.1:4780/"))
+    let safeRootURL = try XCTUnwrap(URL(string: "http://127.0.0.1:4780/"))
+    let safeFragmentURL = try XCTUnwrap(URL(string: "http://127.0.0.1:4780/#esperando"))
+    let safeSubpathURL = try XCTUnwrap(
+      URL(string: "http://localhost:4780/projeto-painel/_arquivo/doc-1#secao-1")
+    )
     let externalURL = try XCTUnwrap(URL(string: "https://example.com/painel"))
+    let dotDotURL = try XCTUnwrap(URL(string: "http://127.0.0.1:4780/projeto-painel/../secreto"))
+    let encodedDotDotURL = try XCTUnwrap(URL(string: "http://127.0.0.1:4780/%2e%2e/secreto"))
+    let queryURL = try XCTUnwrap(URL(string: "http://127.0.0.1:4780/fila?cmd=rm"))
+    let badFragmentURL = try XCTUnwrap(URL(string: "http://127.0.0.1:4780/#a/b"))
     let fileURL = URL(filePath: "/etc/passwd")
 
-    XCTAssertTrue(BrainTabView.openIfLoopbackSafe(safeURL) { openedURLs.append($0) })
+    XCTAssertTrue(BrainTabView.openIfLoopbackSafe(safeRootURL) { openedURLs.append($0) })
+    XCTAssertTrue(BrainTabView.openIfLoopbackSafe(safeFragmentURL) { openedURLs.append($0) })
+    XCTAssertTrue(BrainTabView.openIfLoopbackSafe(safeSubpathURL) { openedURLs.append($0) })
     XCTAssertFalse(BrainTabView.openIfLoopbackSafe(externalURL) { openedURLs.append($0) })
+    XCTAssertFalse(BrainTabView.openIfLoopbackSafe(dotDotURL) { openedURLs.append($0) })
+    XCTAssertFalse(BrainTabView.openIfLoopbackSafe(encodedDotDotURL) { openedURLs.append($0) })
+    XCTAssertFalse(BrainTabView.openIfLoopbackSafe(queryURL) { openedURLs.append($0) })
+    XCTAssertFalse(BrainTabView.openIfLoopbackSafe(badFragmentURL) { openedURLs.append($0) })
     XCTAssertFalse(BrainTabView.openIfLoopbackSafe(fileURL) { openedURLs.append($0) })
-    XCTAssertEqual(openedURLs, [safeURL])
+    XCTAssertFalse(
+      BrainTabView.dispatchIfBaseAndTargetSafe(
+        targetURL: safeFragmentURL,
+        baseURL: externalURL
+      ) { openedURLs.append($0) }
+    )
+    XCTAssertTrue(
+      BrainTabView.dispatchIfBaseAndTargetSafe(
+        targetURL: safeSubpathURL,
+        baseURL: safeRootURL
+      ) { openedURLs.append($0) }
+    )
+    XCTAssertEqual(openedURLs, [safeRootURL, safeFragmentURL, safeSubpathURL, safeSubpathURL])
   }
 
   func testEveryPublishedAppErrorCodeIsProvokedAndSafeForDisplay() {

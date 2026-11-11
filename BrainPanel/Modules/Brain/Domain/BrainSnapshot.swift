@@ -54,10 +54,27 @@ nonisolated enum BrainPrivacyGuard {
 nonisolated struct PendingPrompt: Identifiable, Equatable, Sendable {
   var id: String { sessionKey }
   let sessionKey: String
+  let project: String?
   let askedAt: Date
   let text: String?
   let isExplicit: Bool
   let hasButton: Bool
+
+  init(
+    sessionKey: String,
+    project: String? = nil,
+    askedAt: Date,
+    text: String?,
+    isExplicit: Bool,
+    hasButton: Bool
+  ) {
+    self.sessionKey = sessionKey
+    self.project = project
+    self.askedAt = askedAt
+    self.text = text
+    self.isExplicit = isExplicit
+    self.hasButton = hasButton
+  }
 
   func elapsedSummary(now: Date) -> String {
     RelativeTimeFormatter.elapsedPhrase(since: askedAt, now: now)
@@ -364,6 +381,7 @@ nonisolated struct BrainSnapshot: Equatable, Sendable {
           pendingPrompts: [
             PendingPrompt(
               sessionKey: "painel-lead",
+              project: "projeto-painel",
               askedAt: now.addingTimeInterval(-14 * 60),
               text: "Aprovar layout da aba Brain antes do merge?",
               isExplicit: true,
